@@ -335,17 +335,30 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 // Tabs
                                 Container(
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(6),
+                                    color: Colors.white,
+                                    border: Border(
+                                      bottom: BorderSide(color: Colors.grey.shade300, width: 1),
+                                    ),
                                   ),
                                   child: TabBar(
                                     controller: _tabController,
-                                    indicator: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(6),
+                                    indicator: UnderlineTabIndicator(
+                                      borderSide: BorderSide(
+                                        color: Colors.black87,
+                                        width: 3,
+                                      ),
+                                      insets: EdgeInsets.symmetric(horizontal: 0),
                                     ),
                                     labelColor: Colors.black87,
                                     unselectedLabelColor: Colors.black54,
+                                    labelStyle: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                    unselectedLabelStyle: const TextStyle(
+                                      fontWeight: FontWeight.normal,
+                                      fontSize: 15,
+                                    ),
                                     tabs: const [
                                       Tab(text: 'Organizer'),
                                       Tab(text: 'Attendee'),
