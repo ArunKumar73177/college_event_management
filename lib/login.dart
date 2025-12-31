@@ -66,27 +66,61 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   void _handleOrganizerLogin() {
+    // Validate fields
+    if (_organizerStudentIdController.text.isEmpty) {
+      _showSnackBar('Please enter Student ID');
+      return;
+    }
+
+    if (_organizerPasswordController.text.isEmpty) {
+      _showSnackBar('Please enter Password');
+      return;
+    }
+
     if (_organizerCaptchaController.text != _organizerCaptchaCode) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid CAPTCHA. Please try again.')),
-      );
+      _showSnackBar('Invalid CAPTCHA. Please try again.');
       _refreshOrganizerCaptcha();
       return;
     }
+
     print('Organizer login: ${_organizerStudentIdController.text}');
-    // Add your login logic here
+
+    // Navigate to Organizer Dashboard
+    Navigator.pushReplacementNamed(context, '/organizer');
   }
 
   void _handleAttendeeLogin() {
+    // Validate fields
+    if (_attendeeStudentIdController.text.isEmpty) {
+      _showSnackBar('Please enter Student ID');
+      return;
+    }
+
+    if (_attendeePasswordController.text.isEmpty) {
+      _showSnackBar('Please enter Password');
+      return;
+    }
+
     if (_attendeeCaptchaController.text != _attendeeCaptchaCode) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid CAPTCHA. Please try again.')),
-      );
+      _showSnackBar('Invalid CAPTCHA. Please try again.');
       _refreshAttendeeCaptcha();
       return;
     }
+
     print('Attendee login: ${_attendeeStudentIdController.text}');
-    // Add your login logic here
+
+    // Navigate to Attendee Dashboard
+    Navigator.pushReplacementNamed(context, '/attendee');
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _showHelpDialog() {
@@ -262,10 +296,17 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     // Logo and Header
-                    Image.asset(
-                      'assets/images/logo.png', // Replace with your logo path
-                      width: 112,
-                      height: 112,
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade700,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.event_available,
+                        size: 64,
+                        color: Colors.white,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     const Text(
