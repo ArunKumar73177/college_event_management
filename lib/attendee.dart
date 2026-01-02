@@ -44,7 +44,7 @@ class EventAlert {
   final String eventTitle;
   final String message;
   final DateTime timestamp;
-  final bool isRead;
+  bool isRead;
 
   EventAlert({
     required this.id,
@@ -157,6 +157,33 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     _showQRDialog(event);
   }
 
+  void _handleLogout() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pushReplacementNamed(context, '/login');
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showQRDialog(AttendeeEvent event) {
     final registrationId = 'REG-${event.id}-${DateTime.now().millisecondsSinceEpoch}';
 
@@ -164,59 +191,154 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       context: context,
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Event QR Code',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: QrImageView(
+                    data: registrationId,
+                    version: QrVersions.auto,
+                    size: 200,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  event.title,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${event.date} at ${event.time}',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Registration ID: $registrationId',
+                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAlertsDialog() {
+    // Mark all alerts as read when dialog opens
+    setState(() {
+      for (var alert in alerts) {
+        alert.isRead = true;
+      }
+    });
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Event QR Code',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Container(
+              Padding(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: QrImageView(
-                  data: registrationId,
-                  version: QrVersions.auto,
-                  size: 200,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Notifications',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                event.title,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${event.date} at ${event.time}',
-                style: const TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Registration ID: $registrationId',
-                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+              const Divider(height: 1),
+              Flexible(
+                child: alerts.isEmpty
+                    ? Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.notifications_off, size: 48, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text('No notifications', style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                )
+                    : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: alerts.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final alert = alerts[index];
+                    return ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.notifications,
+                          color: Colors.grey,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(alert.eventTitle),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text(alert.message),
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatTimestamp(alert.timestamp),
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                      isThreeLine: true,
+                    );
+                  },
                 ),
               ),
             ],
@@ -226,97 +348,102 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
-  void _showAlertsDialog() {
+  void _showFavoritesDialog() {
+    final favoriteEvents = mockEvents.where((e) => favoriteEventIds.contains(e.id)).toList();
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Notifications',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Flexible(
-              child: alerts.isEmpty
-                  ? Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.notifications_off, size: 48, color: Colors.grey),
-                    SizedBox(height: 16),
-                    Text('No notifications', style: TextStyle(color: Colors.grey)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Favorite Events',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
                   ],
                 ),
-              )
-                  : ListView.separated(
-                shrinkWrap: true,
-                itemCount: alerts.length,
-                separatorBuilder: (context, index) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final alert = alerts[index];
-                  return ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: alert.isRead ? Colors.grey.shade200 : Colors.blue.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        Icons.notifications,
-                        color: alert.isRead ? Colors.grey : Colors.blue,
-                        size: 20,
-                      ),
-                    ),
-                    title: Text(
-                      alert.eventTitle,
-                      style: TextStyle(
-                        fontWeight: alert.isRead ? FontWeight.normal : FontWeight.bold,
-                      ),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 4),
-                        Text(alert.message),
-                        const SizedBox(height: 4),
-                        Text(
-                          _formatTimestamp(alert.timestamp),
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                    onTap: () {
-                      setState(() {
-                        alerts[index] = EventAlert(
-                          id: alert.id,
-                          eventTitle: alert.eventTitle,
-                          message: alert.message,
-                          timestamp: alert.timestamp,
-                          isRead: true,
-                        );
-                      });
-                    },
-                  );
-                },
               ),
-            ),
-          ],
+              const Divider(height: 1),
+              Flexible(
+                child: favoriteEvents.isEmpty
+                    ? Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.favorite_border, size: 48, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text('No favorite events', style: TextStyle(color: Colors.grey)),
+                      SizedBox(height: 8),
+                      Text(
+                        'Add events to favorites to see them here',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                )
+                    : ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: favoriteEvents.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final event = favoriteEvents[index];
+                    return ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.favorite,
+                          color: Colors.red,
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(event.title),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text('${event.date} at ${event.time}'),
+                          const SizedBox(height: 2),
+                          Text(event.location, style: const TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                      isThreeLine: true,
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close, color: Colors.grey),
+                        onPressed: () {
+                          setState(() {
+                            favoriteEventIds.remove(event.id);
+                          });
+                          Navigator.pop(context);
+                          _showSnackBar('Removed from favorites');
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -384,7 +511,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
           SliverAppBar(
             backgroundColor: Colors.white,
             pinned: true,
-            expandedHeight: 220,
+            expandedHeight: 240,
             elevation: 0,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
@@ -416,42 +543,47 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Stack(
+                        Row(
                           children: [
-                            ElevatedButton.icon(
-                              onPressed: _showAlertsDialog,
-                              icon: const Icon(Icons.notifications, size: 18),
-                              label: const Text('Alerts'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.black,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                            if (unreadAlertsCount > 0)
-                              Positioned(
-                                right: 0,
-                                top: 0,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
-                                    color: Colors.red,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 18,
-                                    minHeight: 18,
-                                  ),
-                                  child: Text(
-                                    unreadAlertsCount.toString(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
+                            Stack(
+                              children: [
+                                IconButton(
+                                  onPressed: _showAlertsDialog,
+                                  icon: const Icon(Icons.notifications),
+                                  color: Colors.black,
                                 ),
-                              ),
+                                if (unreadAlertsCount > 0)
+                                  Positioned(
+                                    right: 8,
+                                    top: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      constraints: const BoxConstraints(
+                                        minWidth: 16,
+                                        minHeight: 16,
+                                      ),
+                                      child: Text(
+                                        unreadAlertsCount.toString(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            IconButton(
+                              onPressed: _handleLogout,
+                              icon: const Icon(Icons.logout),
+                              color: Colors.red,
+                            ),
                           ],
                         ),
                       ],
@@ -564,32 +696,41 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
 
                   // Favorites count
                   if (activeFilter == null)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade100),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: const [
-                              Icon(Icons.favorite, color: Colors.red, size: 20),
-                              SizedBox(width: 8),
-                              Text('Favorites', style: TextStyle(color: Colors.grey)),
-                            ],
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(12),
+                    InkWell(
+                      onTap: _showFavoritesDialog,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade100),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: const [
+                                Icon(Icons.favorite, color: Colors.red, size: 20),
+                                SizedBox(width: 8),
+                                Text('Favorites', style: TextStyle(color: Colors.grey)),
+                              ],
                             ),
-                            child: Text(favoriteEventIds.length.toString()),
-                          ),
-                        ],
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade200,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(favoriteEventIds.length.toString()),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   const SizedBox(height: 16),
@@ -632,7 +773,11 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
             child: Icon(icon, color: color, size: 20),
           ),
           const SizedBox(height: 8),
-          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+            overflow: TextOverflow.ellipsis,
+          ),
           const SizedBox(height: 4),
           Text(
             value,
@@ -678,7 +823,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
                   child: Text(
@@ -748,7 +892,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 const Icon(Icons.people, size: 16, color: Colors.grey),
                 const SizedBox(width: 8),
                 Text(
-                  '${event.registered} / ${event.capacity} attendees',
+                  '${event.registered} / ${event.capacity}',
                   style: const TextStyle(color: Colors.grey, fontSize: 14),
                 ),
               ],
@@ -774,9 +918,12 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               ],
             ),
             const SizedBox(height: 16),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Expanded(
+                SizedBox(
+                  width: MediaQuery.of(context).size.width * 0.5,
                   child: ElevatedButton(
                     onPressed: isRegistered
                         ? (event.status == EventStatus.upcoming
@@ -791,7 +938,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                       foregroundColor: Colors.white,
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           isRegistered ? Icons.check_circle : Icons.person_add,
@@ -803,19 +950,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: () => _handleToggleFavorite(event.id),
-                  icon: Icon(
-                    isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: isFavorite ? Colors.red : Colors.grey,
-                  ),
-                ),
-                if (isRegistered)
-                  IconButton(
-                    onPressed: () => _handleViewQR(event),
-                    icon: const Icon(Icons.qr_code, color: Colors.grey),
-                  ),
                 IconButton(
                   onPressed: () => _showEventOptions(event),
                   icon: const Icon(Icons.more_vert, color: Colors.grey),
