@@ -29,7 +29,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/organizer': (context) => const OrganizerDashboard(),
-        '/attendee': (context) => const AttendeeDashboard(),
+        '/attendee': (context) => const AttendeeDashboard(username: '',),
       },
     );
   }
