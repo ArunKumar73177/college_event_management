@@ -66,7 +66,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   void _handleOrganizerLogin() {
-    // Validate fields
     if (_organizerStudentIdController.text.isEmpty) {
       _showSnackBar('Please enter Student ID');
       return;
@@ -84,13 +83,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     }
 
     print('Organizer login: ${_organizerStudentIdController.text}');
-
-    // Navigate to Organizer Dashboard
     Navigator.pushReplacementNamed(context, '/organizer');
   }
 
   void _handleAttendeeLogin() {
-    // Validate fields
     if (_attendeeStudentIdController.text.isEmpty) {
       _showSnackBar('Please enter Student ID');
       return;
@@ -108,8 +104,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     }
 
     print('Attendee login: ${_attendeeStudentIdController.text}');
-
-    // Navigate to Attendee Dashboard
     Navigator.pushReplacementNamed(context, '/attendee');
   }
 
@@ -295,17 +289,27 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo and Header
+                    // Logo Container - FIXED
                     Container(
-                      padding: const EdgeInsets.all(24),
+                      width: 140,
+                      height: 140,
                       decoration: BoxDecoration(
-                        color: Colors.blue.shade700,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.event_available,
-                        size: 64,
                         color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(25),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/images/app_iconas.png',
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
