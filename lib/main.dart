@@ -23,13 +23,12 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
-      // Define routes for navigation
       initialRoute: '/',
       routes: {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/organizer': (context) => const OrganizerDashboard(),
-        '/attendee': (context) => const AttendeeDashboard(username: '',),
+        '/attendee': (context) => const AttendeeDashboard(username: ''),
       },
     );
   }
@@ -59,14 +58,14 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
+        curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
       ),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.0, 0.5, curve: Curves.easeOutBack),
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
       ),
     );
 
@@ -96,76 +95,102 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.blue[700]!,
-              Colors.blue[900]!,
+              Colors.grey.shade50,
+              Colors.grey.shade100,
             ],
           ),
         ),
-        child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: ScaleTransition(
-              scale: _scaleAnimation,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Logo Container with shadow
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
-                          blurRadius: 20,
-                          spreadRadius: 5,
-                        ),
-                      ],
+        child: SafeArea(
+          child: Center(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: ScaleTransition(
+                scale: _scaleAnimation,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Spacer(flex: 2),
+
+                    // Logo Container
+                    Container(
+                      width: 180,
+                      height: 180,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(30),
+                      child: Image.asset(
+                        'assets/images/app_iconas.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.event_available,
-                      size: 80,
-                      color: Colors.blue,
+
+                    const SizedBox(height: 32),
+
+                    // App Title
+                    const Text(
+                      'SCRIET Events',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                        letterSpacing: 1.5,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 32),
-                  const Text(
-                    'SCRIET Events',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 1.2,
+
+                    const SizedBox(height: 12),
+
+                    // Subtitle
+                    const Text(
+                      'College Event Management System',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'College Event Management System',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white70,
-                      letterSpacing: 0.5,
+
+                    const SizedBox(height: 8),
+
+                    const Text(
+                      'Chaudhary Charan Singh University, Meerut',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.black45,
+                        fontWeight: FontWeight.w300,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'CCS University, Meerut',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white60,
+
+                    const Spacer(flex: 2),
+
+                    // Loading Indicator
+                    CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.grey.shade700),
+                      strokeWidth: 2,
                     ),
-                  ),
-                  const SizedBox(height: 48),
-                  const SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 3,
+
+                    const SizedBox(height: 24),
+
+                    // Footer
+                    const Text(
+                      '© 2024 SCRIET | Meerut, Uttar Pradesh',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.black38,
+                      ),
                     ),
-                  ),
-                ],
+
+                    const SizedBox(height: 32),
+                  ],
+                ),
               ),
             ),
           ),
@@ -175,29 +200,24 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 }
 
-// Extension to make navigation easier throughout the app
+// Extension for navigation helpers
 extension NavigationExtension on BuildContext {
-  // Navigate to login
   void navigateToLogin() {
     Navigator.pushReplacementNamed(this, '/login');
   }
 
-  // Navigate to organizer dashboard
   void navigateToOrganizer() {
     Navigator.pushReplacementNamed(this, '/organizer');
   }
 
-  // Navigate to attendee dashboard
   void navigateToAttendee() {
     Navigator.pushReplacementNamed(this, '/attendee');
   }
 
-  // Pop to previous screen
   void goBack() {
     Navigator.pop(this);
   }
 
-  // Show a snackbar message
   void showMessage(String message) {
     ScaffoldMessenger.of(this).showSnackBar(
       SnackBar(
@@ -208,7 +228,6 @@ extension NavigationExtension on BuildContext {
     );
   }
 
-  // Show confirmation dialog
   Future<bool> showConfirmDialog({
     required String title,
     required String message,
