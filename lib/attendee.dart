@@ -3,7 +3,9 @@ import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 class AttendeeDashboard extends StatefulWidget {
-  const AttendeeDashboard({Key? key}) : super(key: key);
+  final String username; // Username from database
+
+  const AttendeeDashboard({Key? key, required this.username}) : super(key: key);
 
   @override
   State<AttendeeDashboard> createState() => _AttendeeDashboardState();
@@ -37,8 +39,24 @@ class AttendeeEvent {
   });
 }
 
+class EventAlert {
+  final String id;
+  final String eventTitle;
+  final String message;
+  final DateTime timestamp;
+  final bool isRead;
+
+  EventAlert({
+    required this.id,
+    required this.eventTitle,
+    required this.message,
+    required this.timestamp,
+    this.isRead = false,
+  });
+}
+
 class _AttendeeDashboardState extends State<AttendeeDashboard> {
-  // Mock event data
+  // Reduced mock event data
   final List<AttendeeEvent> mockEvents = [
     AttendeeEvent(
       id: '1',
@@ -54,18 +72,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     ),
     AttendeeEvent(
       id: '2',
-      title: 'Annual Sports Day',
-      description: 'Participate in various sports competitions',
-      date: 'Jan 20, 2026',
-      time: '09:00',
-      location: 'Main Sports Ground',
-      category: 'Sports',
-      capacity: 500,
-      registered: 320,
-      status: EventStatus.upcoming,
-    ),
-    AttendeeEvent(
-      id: '3',
       title: 'Cultural Night 2026',
       description: 'Evening of music, dance, and performances',
       date: 'Feb 5, 2026',
@@ -76,65 +82,30 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       registered: 267,
       status: EventStatus.upcoming,
     ),
-    AttendeeEvent(
-      id: '4',
-      title: 'Hackathon 2026',
-      description: '24-hour coding marathon with prizes',
-      date: 'Feb 15, 2026',
-      time: '09:00',
-      location: 'Innovation Hub',
-      category: 'Technical',
-      capacity: 100,
-      registered: 89,
-      status: EventStatus.upcoming,
+  ];
+
+  // Mock alerts data
+  List<EventAlert> alerts = [
+    EventAlert(
+      id: '1',
+      eventTitle: 'Tech Talk: AI Workshop',
+      message: 'Event starts in 2 days! Don\'t forget to attend.',
+      timestamp: DateTime.now().subtract(const Duration(hours: 2)),
+      isRead: false,
     ),
-    AttendeeEvent(
-      id: '5',
-      title: 'Career Fair',
-      description: 'Meet recruiters from top companies',
-      date: 'Mar 10, 2026',
-      time: '14:00',
-      location: 'Conference Hall',
-      category: 'Career',
-      capacity: 150,
-      registered: 98,
-      status: EventStatus.upcoming,
+    EventAlert(
+      id: '2',
+      eventTitle: 'Cultural Night 2026',
+      message: 'New performers added to the lineup!',
+      timestamp: DateTime.now().subtract(const Duration(days: 1)),
+      isRead: false,
     ),
-    AttendeeEvent(
-      id: '6',
-      title: 'Web Development Workshop',
-      description: 'Learn modern web development',
-      date: 'Dec 10, 2025',
-      time: '10:00',
-      location: 'Computer Lab 2',
-      category: 'Technical',
-      capacity: 50,
-      registered: 50,
-      status: EventStatus.completed,
-    ),
-    AttendeeEvent(
-      id: '7',
-      title: 'Winter Fest 2025',
-      description: 'Annual winter celebration',
-      date: 'Dec 20, 2025',
-      time: '16:00',
-      location: 'Central Lawn',
-      category: 'Cultural',
-      capacity: 250,
-      registered: 198,
-      status: EventStatus.completed,
-    ),
-    AttendeeEvent(
-      id: '8',
-      title: 'Alumni Meet 2025',
-      description: 'Network with successful alumni',
-      date: 'Nov 15, 2025',
-      time: '17:00',
-      location: 'Grand Hall',
-      category: 'Career',
-      capacity: 100,
-      registered: 87,
-      status: EventStatus.completed,
+    EventAlert(
+      id: '3',
+      eventTitle: 'System Notification',
+      message: 'Your profile has been updated successfully.',
+      timestamp: DateTime.now().subtract(const Duration(days: 3)),
+      isRead: true,
     ),
   ];
 
@@ -146,7 +117,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     'Career'
   ];
 
-  Set<String> registeredEventIds = {'6', '7'};
+  Set<String> registeredEventIds = {};
   Set<String> favoriteEventIds = {};
   String searchQuery = '';
   String selectedCategory = 'All Categories';
@@ -255,6 +226,115 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
+  void _showAlertsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Notifications',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: alerts.isEmpty
+                  ? Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.notifications_off, size: 48, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text('No notifications', style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              )
+                  : ListView.separated(
+                shrinkWrap: true,
+                itemCount: alerts.length,
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final alert = alerts[index];
+                  return ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: alert.isRead ? Colors.grey.shade200 : Colors.blue.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.notifications,
+                        color: alert.isRead ? Colors.grey : Colors.blue,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      alert.eventTitle,
+                      style: TextStyle(
+                        fontWeight: alert.isRead ? FontWeight.normal : FontWeight.bold,
+                      ),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        Text(alert.message),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatTimestamp(alert.timestamp),
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                    onTap: () {
+                      setState(() {
+                        alerts[index] = EventAlert(
+                          id: alert.id,
+                          eventTitle: alert.eventTitle,
+                          message: alert.message,
+                          timestamp: alert.timestamp,
+                          isRead: true,
+                        );
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
@@ -292,6 +372,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   int get completedAttendedCount => mockEvents
       .where((e) => e.status == EventStatus.completed && registeredEventIds.contains(e.id))
       .length;
+  int get unreadAlertsCount => alerts.where((a) => !a.isRead).length;
 
   @override
   Widget build(BuildContext context) {
@@ -315,32 +396,63 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text(
-                              'Event Dashboard',
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Welcome, ${widget.username}',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const Text(
+                                'Discover & Register Events',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Stack(
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: _showAlertsDialog,
+                              icon: const Icon(Icons.notifications, size: 18),
+                              label: const Text('Alerts'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                foregroundColor: Colors.white,
                               ),
                             ),
-                            Text(
-                              'Discover & Register',
-                              style: TextStyle(color: Colors.grey),
-                            ),
+                            if (unreadAlertsCount > 0)
+                              Positioned(
+                                right: 0,
+                                top: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.red,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 18,
+                                    minHeight: 18,
+                                  ),
+                                  child: Text(
+                                    unreadAlertsCount.toString(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
                           ],
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            _showSnackBar('Alerts feature');
-                          },
-                          icon: const Icon(Icons.notifications, size: 18),
-                          label: const Text('Alerts'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black,
-                            foregroundColor: Colors.white,
-                          ),
                         ),
                       ],
                     ),
@@ -575,8 +687,11 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
                   ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
@@ -593,14 +708,24 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               ],
             ),
             const SizedBox(height: 8),
-            Text(event.description, style: const TextStyle(color: Colors.grey)),
+            Text(
+              event.description,
+              style: const TextStyle(color: Colors.grey),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
                 const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
                 const SizedBox(width: 8),
-                Text('${event.date} at ${event.time}',
-                    style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                Expanded(
+                  child: Text(
+                    '${event.date} at ${event.time}',
+                    style: const TextStyle(color: Colors.grey, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -608,7 +733,13 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               children: [
                 const Icon(Icons.location_on, size: 16, color: Colors.grey),
                 const SizedBox(width: 8),
-                Text(event.location, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                Expanded(
+                  child: Text(
+                    event.location,
+                    style: const TextStyle(color: Colors.grey, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
