@@ -86,6 +86,9 @@ class OrganizerDashboard extends StatefulWidget {
 }
 
 class _OrganizerDashboardState extends State<OrganizerDashboard> {
+  // TODO: Replace with actual organizer name from database
+  final String organizerName = "Organizer Name";
+
   List<Event> events = [
     Event(
       id: '1',
@@ -206,13 +209,13 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         )
             : Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text('Event Dashboard',
-                style: TextStyle(
+          children: [
+            Text('Welcome, $organizerName',
+                style: const TextStyle(
                     color: Colors.black,
                     fontSize: 20,
                     fontWeight: FontWeight.bold)),
-            Text('Organize & Manage',
+            const Text('Organize & Manage Events',
                 style: TextStyle(color: Colors.grey, fontSize: 14)),
           ],
         ),
@@ -495,7 +498,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                   LinearProgressIndicator(
                     value: attendancePercentage / 100,
                     backgroundColor: Colors.grey[200],
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
                   ),
                 ],
               ),
@@ -621,46 +624,59 @@ class _EventFormWidgetState extends State<EventFormWidget> {
           children: [
             TextFormField(
               controller: _titleController,
-              decoration: const InputDecoration(labelText: 'Event Title'),
+              decoration: const InputDecoration(
+                labelText: 'Event Title',
+                border: OutlineInputBorder(),
+              ),
               validator: (value) =>
               value?.isEmpty ?? true ? 'Required' : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _locationController,
-              decoration: const InputDecoration(labelText: 'Location'),
+              decoration: const InputDecoration(
+                labelText: 'Location',
+                border: OutlineInputBorder(),
+              ),
               validator: (value) =>
               value?.isEmpty ?? true ? 'Required' : null,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _descriptionController,
-              decoration: const InputDecoration(labelText: 'Description'),
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                border: OutlineInputBorder(),
+              ),
               maxLines: 3,
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _categoryController,
-              decoration: const InputDecoration(labelText: 'Category'),
+              decoration: const InputDecoration(
+                labelText: 'Category',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _maxAttendeesController,
-              decoration: const InputDecoration(labelText: 'Max Attendees'),
+              decoration: const InputDecoration(
+                labelText: 'Max Attendees',
+                border: OutlineInputBorder(),
+              ),
               keyboardType: TextInputType.number,
               validator: (value) =>
               value?.isEmpty ?? true ? 'Required' : null,
             ),
             const SizedBox(height: 16),
-            ListTile(
-              title: Text('Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}'),
-              trailing: const Icon(Icons.calendar_today),
+            InkWell(
               onTap: () async {
                 final date = await showDatePicker(
                   context: context,
                   initialDate: _selectedDate,
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime(2026),
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2030),
                 );
                 if (date != null) {
                   setState(() {
@@ -668,10 +684,20 @@ class _EventFormWidgetState extends State<EventFormWidget> {
                   });
                 }
               },
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Date',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.calendar_today),
+                ),
+                child: Text(
+                  DateFormat('MMM dd, yyyy').format(_selectedDate),
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
             ),
-            ListTile(
-              title: Text('Time: ${_selectedTime.format(context)}'),
-              trailing: const Icon(Icons.access_time),
+            const SizedBox(height: 16),
+            InkWell(
               onTap: () async {
                 final time = await showTimePicker(
                   context: context,
@@ -683,12 +709,25 @@ class _EventFormWidgetState extends State<EventFormWidget> {
                   });
                 }
               },
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Time',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.access_time),
+                ),
+                child: Text(
+                  _selectedTime.format(context),
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _submitForm,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
               ),
               child: Text(widget.event == null ? 'Create Event' : 'Update Event'),
             ),
