@@ -1,27 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firebase_service.dart';
-
-void main() {
-  runApp(const EventOrganizerApp());
-}
-
-class EventOrganizerApp extends StatelessWidget {
-  const EventOrganizerApp({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Event Dashboard',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-      ),
-      home: const OrganizerDashboard(),
-    );
-  }
-}
 
 enum EventStatus { upcoming, ongoing, completed }
 
@@ -50,29 +30,40 @@ class Event {
     required this.status,
   });
 
-  Event copyWith({
-    String? id,
-    String? title,
-    DateTime? date,
-    TimeOfDay? time,
-    String? location,
-    String? description,
-    String? category,
-    int? maxAttendees,
-    int? attendees,
-    EventStatus? status,
-  }) {
+  factory Event.fromFirestore(Map<String, dynamic> data) {
+    DateTime date = data['date'] is DateTime
+        ? data['date']
+        : (data['date'] as Timestamp).toDate();
+
+    List<String> timeParts = data['time'].toString().split(':');
+    TimeOfDay time = TimeOfDay(
+      hour: int.parse(timeParts[0]),
+      minute: int.parse(timeParts[1]),
+    );
+
+    EventStatus status;
+    switch (data['status']) {
+      case 'ongoing':
+        status = EventStatus.ongoing;
+        break;
+      case 'completed':
+        status = EventStatus.completed;
+        break;
+      default:
+        status = EventStatus.upcoming;
+    }
+
     return Event(
-      id: id ?? this.id,
-      title: title ?? this.title,
-      date: date ?? this.date,
-      time: time ?? this.time,
-      location: location ?? this.location,
-      description: description ?? this.description,
-      category: category ?? this.category,
-      maxAttendees: maxAttendees ?? this.maxAttendees,
-      attendees: attendees ?? this.attendees,
-      status: status ?? this.status,
+      id: data['id'],
+      title: data['title'] ?? '',
+      date: date,
+      time: time,
+      location: data['location'] ?? '',
+      description: data['description'] ?? '',
+      category: data['category'] ?? '',
+      maxAttendees: data['capacity'] ?? 0,
+      attendees: data['registeredCount'] ?? 0,
+      status: status,
     );
   }
 }
@@ -90,33 +81,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   String organizerName = "Loading...";
   String? studentId;
   bool isLoading = true;
-
-  List<Event> events = [
-    Event(
-      id: '1',
-      title: 'Tech Talk: AI Workshop',
-      date: DateTime(2025, 1, 15),
-      time: const TimeOfDay(hour: 10, minute: 0),
-      location: 'Auditorium Hall A',
-      description: 'Learn about AI and machine learning basics',
-      category: 'Technical',
-      maxAttendees: 200,
-      attendees: 145,
-      status: EventStatus.upcoming,
-    ),
-    Event(
-      id: '2',
-      title: 'Annual Sports Day',
-      date: DateTime(2025, 1, 20),
-      time: const TimeOfDay(hour: 9, minute: 0),
-      location: 'Main Sports Ground',
-      description: 'Inter-department sports competition',
-      category: 'Sports',
-      maxAttendees: 500,
-      attendees: 320,
-      status: EventStatus.upcoming,
-    ),
-  ];
 
   DashboardView currentView = DashboardView.list;
   Event? selectedEvent;
@@ -139,7 +103,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           isLoading = false;
         });
       } else {
-        // If no user found, redirect to login
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/login');
         }
@@ -153,7 +116,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   }
 
   Future<void> _handleLogout() async {
-    // Show confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -184,44 +146,112 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     }
   }
 
-  void _createEvent(Event event) {
-    setState(() {
-      events.insert(0, event);
-      currentView = DashboardView.list;
-    });
-    _showSnackBar('Event created successfully!');
+  Future<void> _createEvent(Event event) async {
+    try {
+      await FirebaseService.createEvent(
+        title: event.title,
+        description: event.description,
+        date: event.date,
+        time: '${event.time.hour}:${event.time.minute}',
+        location: event.location,
+        category: event.category,
+        capacity: event.maxAttendees,
+      );
+      setState(() {
+        currentView = DashboardView.list;
+      });
+      _showSnackBar('Event created successfully!');
+    } catch (e) {
+      _showSnackBar('Failed to create event: $e');
+    }
   }
 
-  void _updateEvent(Event updatedEvent) {
-    setState(() {
-      final index = events.indexWhere((e) => e.id == updatedEvent.id);
-      if (index != -1) {
-        events[index] = updatedEvent;
+  Future<void> _updateEvent(Event updatedEvent) async {
+    try {
+      await FirebaseService.updateEvent(
+        updatedEvent.id,
+        {
+          'title': updatedEvent.title,
+          'description': updatedEvent.description,
+          'date': updatedEvent.date,
+          'time': '${updatedEvent.time.hour}:${updatedEvent.time.minute}',
+          'location': updatedEvent.location,
+          'category': updatedEvent.category,
+          'capacity': updatedEvent.maxAttendees,
+          'status': updatedEvent.status.name,
+        },
+      );
+      setState(() {
+        currentView = DashboardView.list;
+        selectedEvent = null;
+      });
+      _showSnackBar('Event updated successfully!');
+    } catch (e) {
+      _showSnackBar('Failed to update event: $e');
+    }
+  }
+
+  Future<void> _deleteEvent(String id) async {
+    try {
+      await FirebaseService.deleteEvent(id);
+      setState(() {
+        currentView = DashboardView.list;
+        selectedEvent = null;
+      });
+      _showSnackBar('Event deleted successfully!');
+    } catch (e) {
+      _showSnackBar('Failed to delete event: $e');
+    }
+  }
+
+  Future<void> _sendAlertToAttendees(Event event) async {
+    final messageController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send Alert'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Send notification to all registered attendees for "${event.title}"?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: messageController,
+              decoration: const InputDecoration(
+                labelText: 'Message',
+                border: OutlineInputBorder(),
+                hintText: 'Enter alert message...',
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && messageController.text.isNotEmpty) {
+      try {
+        await FirebaseService.broadcastAlertToEvent(
+          event.id,
+          event.title,
+          messageController.text,
+        );
+        _showSnackBar('Alert sent to all registered attendees!');
+      } catch (e) {
+        _showSnackBar('Failed to send alert: $e');
       }
-      currentView = DashboardView.list;
-      selectedEvent = null;
-    });
-    _showSnackBar('Event updated successfully!');
-  }
-
-  void _deleteEvent(String id) {
-    final event = events.firstWhere((e) => e.id == id);
-    setState(() {
-      events.removeWhere((e) => e.id == id);
-      currentView = DashboardView.list;
-      selectedEvent = null;
-    });
-    _showSnackBar('"${event.title}" deleted successfully!');
-  }
-
-  void _addAttendee(String eventId) {
-    setState(() {
-      final event = events.firstWhere((e) => e.id == eventId);
-      if (event.attendees < event.maxAttendees) {
-        event.attendees++;
-      }
-    });
-    _showSnackBar('Attendee registered!');
+    }
   }
 
   void _showSnackBar(String message) {
@@ -230,7 +260,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
     );
   }
 
-  List<Event> get filteredEvents {
+  List<Event> _filterEvents(List<Event> events) {
     var filtered = events;
 
     if (activeFilter != null) {
@@ -334,98 +364,123 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             });
           },
           onDelete: () => _deleteEvent(selectedEvent!.id),
-          onAddAttendee: () => _addAttendee(selectedEvent!.id),
+          onSendAlert: () => _sendAlertToAttendees(selectedEvent!),
         );
     }
   }
 
   Widget _buildListView() {
-    final stats = _calculateStats();
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirebaseService.getAllEventsStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Stats Cards
-            Row(
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return _buildEmptyState();
+        }
+
+        final events = snapshot.data!.map((data) => Event.fromFirestore(data)).toList();
+        final filteredEvents = _filterEvents(events);
+
+        return SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
               children: [
-                Expanded(
-                  child: _buildStatCard(
-                    'Total',
-                    stats['total'].toString(),
-                    Icons.calendar_today,
-                    Colors.blue,
-                  ),
+                // Stats Cards (Real-time)
+                StreamBuilder<Map<String, int>>(
+                  stream: FirebaseService.getOrganizerStatsStream(),
+                  builder: (context, statsSnapshot) {
+                    final stats = statsSnapshot.data ?? {'total': 0, 'upcoming': 0, 'totalAttendees': 0};
+
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'Total',
+                            stats['total'].toString(),
+                            Icons.calendar_today,
+                            Colors.blue,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Upcoming',
+                            stats['upcoming'].toString(),
+                            Icons.trending_up,
+                            Colors.green,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Attendees',
+                            stats['totalAttendees'].toString(),
+                            Icons.people,
+                            Colors.purple,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatCard(
-                    'Upcoming',
-                    stats['upcoming'].toString(),
-                    Icons.trending_up,
-                    Colors.green,
+                const SizedBox(height: 24),
+
+                // Search Bar
+                TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Search events...',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
+                  onChanged: (value) {
+                    setState(() {
+                      searchQuery = value;
+                    });
+                  },
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatCard(
-                    'Attendees',
-                    stats['totalAttendees'].toString(),
-                    Icons.people,
-                    Colors.purple,
-                  ),
+                const SizedBox(height: 16),
+
+                // Filter Tabs
+                Row(
+                  children: [
+                    _buildFilterChip('All', null),
+                    const SizedBox(width: 8),
+                    _buildFilterChip('Upcoming', EventStatus.upcoming),
+                    const SizedBox(width: 8),
+                    _buildFilterChip('Completed', EventStatus.completed),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Event List
+                filteredEvents.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: filteredEvents.length,
+                  itemBuilder: (context, index) {
+                    return _buildEventCard(filteredEvents[index]);
+                  },
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-
-            // Search Bar
-            TextField(
-              decoration: InputDecoration(
-                hintText: 'Search events...',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  searchQuery = value;
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Filter Tabs
-            Row(
-              children: [
-                _buildFilterChip('All', null),
-                const SizedBox(width: 8),
-                _buildFilterChip('Upcoming', EventStatus.upcoming),
-                const SizedBox(width: 8),
-                _buildFilterChip('Completed', EventStatus.completed),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Event List
-            filteredEvents.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: filteredEvents.length,
-              itemBuilder: (context, index) {
-                return _buildEventCard(filteredEvents[index]);
-              },
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -558,7 +613,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Attendance', style: TextStyle(fontSize: 12)),
+                      const Text('Registration', style: TextStyle(fontSize: 12)),
                       Text('$attendancePercentage%',
                           style: const TextStyle(
                               fontSize: 12, fontWeight: FontWeight.bold)),
@@ -624,6 +679,14 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.notifications),
+              title: const Text('Send Alert'),
+              onTap: () {
+                Navigator.pop(context);
+                _sendAlertToAttendees(event);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Delete', style: TextStyle(color: Colors.red)),
               onTap: () {
@@ -635,14 +698,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         ),
       ),
     );
-  }
-
-  Map<String, int> _calculateStats() {
-    return {
-      'total': events.length,
-      'upcoming': events.where((e) => e.status == EventStatus.upcoming).length,
-      'totalAttendees': events.fold(0, (sum, e) => sum + e.attendees),
-    };
   }
 }
 
@@ -841,14 +896,14 @@ class EventDetailsWidget extends StatelessWidget {
   final Event event;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback onAddAttendee;
+  final VoidCallback onSendAlert;
 
   const EventDetailsWidget({
     Key? key,
     required this.event,
     required this.onEdit,
     required this.onDelete,
-    required this.onAddAttendee,
+    required this.onSendAlert,
   }) : super(key: key);
 
   @override
@@ -885,7 +940,7 @@ class EventDetailsWidget extends StatelessWidget {
           const SizedBox(height: 8),
           Text(event.description),
           const SizedBox(height: 24),
-          Text('Attendance: $attendancePercentage%',
+          Text('Registration: $attendancePercentage%',
               style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           LinearProgressIndicator(
@@ -898,11 +953,9 @@ class EventDetailsWidget extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  icon: const Icon(Icons.person_add),
-                  label: const Text('Add Attendee'),
-                  onPressed: event.attendees < event.maxAttendees
-                      ? onAddAttendee
-                      : null,
+                  icon: const Icon(Icons.notifications),
+                  label: const Text('Send Alert'),
+                  onPressed: onSendAlert,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
@@ -943,10 +996,10 @@ class EventDetailsWidget extends StatelessWidget {
                   );
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
                   padding: const EdgeInsets.all(16),
+                  backgroundColor: Colors.red,
                 ),
-                child: const Icon(Icons.delete),
+                child: const Icon(Icons.delete, color: Colors.white),
               ),
             ],
           ),
@@ -962,7 +1015,12 @@ class EventDetailsWidget extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: Colors.grey),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16))),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
         ],
       ),
     );
