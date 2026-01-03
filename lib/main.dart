@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';   // 🔥 ADDED
+
 import 'login.dart';
 import 'organizer.dart';
 import 'attendee.dart';
 
-void main() {
+Future<void> main() async {                            // 🔥 MODIFIED
+  WidgetsFlutterBinding.ensureInitialized();            // 🔥 ADDED
+  await Firebase.initializeApp();                       // 🔥 ADDED
   runApp(const MyApp());
 }
 
@@ -33,6 +37,8 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
+/* ========================= SPLASH ========================= */
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -111,7 +117,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   children: [
                     const Spacer(flex: 2),
 
-                    // Logo Container
                     Container(
                       width: 180,
                       height: 180,
@@ -135,7 +140,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
                     const SizedBox(height: 32),
 
-                    // App Title
                     const Text(
                       'SCRIET Events',
                       style: TextStyle(
@@ -148,7 +152,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
                     const SizedBox(height: 12),
 
-                    // Subtitle
                     const Text(
                       'College Event Management System',
                       style: TextStyle(
@@ -171,7 +174,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
                     const Spacer(flex: 2),
 
-                    // Loading Indicator
                     CircularProgressIndicator(
                       valueColor: AlwaysStoppedAnimation<Color>(Colors.grey.shade700),
                       strokeWidth: 2,
@@ -179,7 +181,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
                     const SizedBox(height: 24),
 
-                    // Footer
                     const Text(
                       '© 2024 SCRIET | Meerut, Uttar Pradesh',
                       style: TextStyle(
@@ -200,7 +201,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 }
 
-// Extension for navigation helpers
+/* ========================= HELPERS ========================= */
+
 extension NavigationExtension on BuildContext {
   void navigateToLogin() {
     Navigator.pushReplacementNamed(this, '/login');
