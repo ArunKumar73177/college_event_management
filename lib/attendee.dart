@@ -650,6 +650,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
 
   Widget _buildEventCard(AttendeeEvent event) {
     final isRegistered = registeredEventIds.contains(event.id);
+    final isFavorite = favoriteEventIds.contains(event.id);
     final registrationPercentage = (event.registered / event.capacity * 100).round();
 
     return Card(
@@ -665,6 +666,14 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                   child: Text(event.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis, maxLines: 2),
                 ),
                 const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => _handleToggleFavorite(event.id),
+                  icon: Icon(
+                    isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: isFavorite ? Colors.red : Colors.grey,
+                  ),
+                  tooltip: isFavorite ? 'Remove from favorites' : 'Add to favorites',
+                ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(color: event.status == EventStatus.upcoming ? Colors.black : Colors.grey, borderRadius: BorderRadius.circular(12)),
@@ -762,12 +771,22 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   }
 
   void _showEventOptions(AttendeeEvent event) {
+    final isFavorite = favoriteEventIds.contains(event.id);
+
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? Colors.red : null),
+              title: Text(isFavorite ? 'Remove from Favorites' : 'Add to Favorites'),
+              onTap: () {
+                Navigator.pop(context);
+                _handleToggleFavorite(event.id);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.calendar_month),
               title: const Text('Add to Calendar'),

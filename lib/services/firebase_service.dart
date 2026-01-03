@@ -63,9 +63,9 @@ class FirebaseService {
     await prefs.clear();
   }
 
-  // ==================== EVENTS CRUD ====================
+  // ==================== EVENTS CRUD (REAL-TIME) ====================
 
-  /// Create new event (Organizer only)
+  /// Create new event (Organizer only) - Returns eventId
   static Future<String> createEvent({
     required String title,
     required String description,
@@ -95,7 +95,7 @@ class FirebaseService {
     }
   }
 
-  /// Update event
+  /// Update event (with proper Timestamp conversion)
   static Future<void> updateEvent(
       String eventId,
       Map<String, dynamic> updates,
@@ -112,7 +112,7 @@ class FirebaseService {
     }
   }
 
-  /// Delete event
+  /// Delete event (with all registrations)
   static Future<void> deleteEvent(String eventId) async {
     try {
       // Delete all registrations first
@@ -122,18 +122,22 @@ class FirebaseService {
           .collection('registrations')
           .get();
 
+      // Batch delete registrations
+      final batch = _firestore.batch();
       for (var doc in registrations.docs) {
-        await doc.reference.delete();
+        batch.delete(doc.reference);
       }
 
-      // Delete the event
-      await _firestore.collection('events').doc(eventId).delete();
+      // Delete the event itself
+      batch.delete(_firestore.collection('events').doc(eventId));
+
+      await batch.commit();
     } catch (e) {
       throw 'Failed to delete event: ${e.toString()}';
     }
   }
 
-  /// Get all events (real-time stream)
+  /// Get all events (real-time stream for Organizer)
   static Stream<List<Map<String, dynamic>>> getAllEventsStream() {
     return _firestore
         .collection('events')
@@ -154,7 +158,7 @@ class FirebaseService {
     });
   }
 
-  /// Get active events for attendees
+  /// Get active events for attendees (real-time)
   static Stream<List<Map<String, dynamic>>> getActiveEventsStream() {
     return _firestore
         .collection('events')
@@ -175,80 +179,77 @@ class FirebaseService {
     });
   }
 
-  // ==================== REGISTRATION SYSTEM ====================
+  // ==================== REGISTRATION SYSTEM (TRANSACTIONAL) ====================
 
-  /// Register for an event
+  /// Register for an event (with transaction for count safety)
   static Future<void> registerForEvent(
       String eventId,
       String studentId,
       ) async {
     try {
-      // Check if already registered
-      final existingReg = await _firestore
-          .collection('events')
-          .doc(eventId)
-          .collection('registrations')
-          .doc(studentId)
-          .get();
+      final eventRef = _firestore.collection('events').doc(eventId);
+      final regRef = eventRef.collection('registrations').doc(studentId);
 
-      if (existingReg.exists) {
-        throw 'Already registered for this event';
-      }
+      await _firestore.runTransaction((transaction) async {
+        // Check if already registered
+        final regDoc = await transaction.get(regRef);
+        if (regDoc.exists) {
+          throw 'Already registered for this event';
+        }
 
-      // Check capacity
-      final eventDoc = await _firestore
-          .collection('events')
-          .doc(eventId)
-          .get();
+        // Check capacity
+        final eventDoc = await transaction.get(eventRef);
+        if (!eventDoc.exists) {
+          throw 'Event not found';
+        }
 
-      final eventData = eventDoc.data()!;
-      if (eventData['registeredCount'] >= eventData['capacity']) {
-        throw 'Event is full';
-      }
+        final eventData = eventDoc.data()!;
+        final currentCount = eventData['registeredCount'] as int? ?? 0;
+        final capacity = eventData['capacity'] as int;
 
-      // Add registration
-      await _firestore
-          .collection('events')
-          .doc(eventId)
-          .collection('registrations')
-          .doc(studentId)
-          .set({
-        'timestamp': FieldValue.serverTimestamp(),
-        'studentId': studentId,
-      });
+        if (currentCount >= capacity) {
+          throw 'Event is full';
+        }
 
-      // Increment registered count
-      await _firestore
-          .collection('events')
-          .doc(eventId)
-          .update({
-        'registeredCount': FieldValue.increment(1),
+        // Add registration
+        transaction.set(regRef, {
+          'timestamp': FieldValue.serverTimestamp(),
+          'studentId': studentId,
+          'attended': false,
+        });
+
+        // Increment registered count atomically
+        transaction.update(eventRef, {
+          'registeredCount': FieldValue.increment(1),
+        });
       });
     } catch (e) {
       throw e.toString();
     }
   }
 
-  /// Unregister from event
+  /// Unregister from event (with transaction)
   static Future<void> unregisterFromEvent(
       String eventId,
       String studentId,
       ) async {
     try {
-      // Remove registration
-      await _firestore
-          .collection('events')
-          .doc(eventId)
-          .collection('registrations')
-          .doc(studentId)
-          .delete();
+      final eventRef = _firestore.collection('events').doc(eventId);
+      final regRef = eventRef.collection('registrations').doc(studentId);
 
-      // Decrement registered count
-      await _firestore
-          .collection('events')
-          .doc(eventId)
-          .update({
-        'registeredCount': FieldValue.increment(-1),
+      await _firestore.runTransaction((transaction) async {
+        final regDoc = await transaction.get(regRef);
+        if (!regDoc.exists) {
+          throw 'Not registered for this event';
+        }
+
+        // Remove registration
+        transaction.delete(regRef);
+
+        // Decrement registered count atomically
+        transaction.update(eventRef, {
+          'registeredCount': FieldValue.increment(-1),
+        });
       });
     } catch (e) {
       throw 'Failed to unregister: ${e.toString()}';
@@ -271,7 +272,7 @@ class FirebaseService {
     }
   }
 
-  /// Get all registrations for a student
+  /// Get all registrations for a student (returns list of event IDs)
   static Future<List<String>> getStudentRegistrations(String studentId) async {
     try {
       final events = await _firestore.collection('events').get();
@@ -294,7 +295,30 @@ class FirebaseService {
     }
   }
 
-  // ==================== ALERTS SYSTEM ====================
+  /// Get registration stream for a specific student (real-time updates)
+  static Stream<List<String>> getStudentRegistrationsStream(String studentId) {
+    return _firestore
+        .collection('events')
+        .snapshots()
+        .asyncMap((snapshot) async {
+      List<String> registeredEventIds = [];
+
+      for (var event in snapshot.docs) {
+        final reg = await event.reference
+            .collection('registrations')
+            .doc(studentId)
+            .get();
+
+        if (reg.exists) {
+          registeredEventIds.add(event.id);
+        }
+      }
+
+      return registeredEventIds;
+    });
+  }
+
+  // ==================== ALERTS SYSTEM (REAL-TIME) ====================
 
   /// Send alert to specific student(s)
   static Future<void> sendAlert({
@@ -376,7 +400,7 @@ class FirebaseService {
     });
   }
 
-  /// Get unread alerts count
+  /// Get unread alerts count (real-time)
   static Stream<int> getUnreadAlertsCountStream(String studentId) {
     return _firestore
         .collection('alerts')
@@ -419,9 +443,9 @@ class FirebaseService {
     }
   }
 
-  // ==================== QR CODE ====================
+  // ==================== QR CODE SYSTEM ====================
 
-  /// Generate QR data for event registration
+  /// Generate QR data for event registration (with timestamp expiry)
   static String generateQRData(String eventId, String studentId) {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     return '$eventId|$studentId|$timestamp';
@@ -444,22 +468,23 @@ class FirebaseService {
       // Verify timestamp (QR valid for 5 minutes)
       final now = DateTime.now().millisecondsSinceEpoch;
       if (now - timestamp > 300000) {
-        throw 'QR code expired';
+        throw 'QR code expired (valid for 5 minutes only)';
       }
 
       // Verify registration
-      final isReg = await isRegistered(eventId, studentId);
-      if (!isReg) {
+      final regRef = _firestore
+          .collection('events')
+          .doc(eventId)
+          .collection('registrations')
+          .doc(studentId);
+
+      final regDoc = await regRef.get();
+      if (!regDoc.exists) {
         throw 'Student not registered for this event';
       }
 
       // Mark attendance
-      await _firestore
-          .collection('events')
-          .doc(eventId)
-          .collection('registrations')
-          .doc(studentId)
-          .update({
+      await regRef.update({
         'attended': true,
         'attendanceTime': FieldValue.serverTimestamp(),
       });
@@ -472,13 +497,14 @@ class FirebaseService {
         'success': true,
         'eventTitle': eventDoc.data()?['title'] ?? 'Unknown Event',
         'studentName': studentDoc.data()?['name'] ?? 'Unknown Student',
+        'studentId': studentId,
       };
     } catch (e) {
       throw e.toString();
     }
   }
 
-  // ==================== FAVORITES ====================
+  // ==================== FAVORITES (LOCAL STORAGE) ====================
 
   /// Add event to favorites
   static Future<void> addToFavorites(String studentId, String eventId) async {
@@ -508,33 +534,26 @@ class FirebaseService {
     }
   }
 
-  /// Get favorites for student
-  static Future<List<String>> getFavorites(String studentId) async {
-    try {
-      final snapshot = await _firestore
-          .collection('students')
-          .doc(studentId)
-          .collection('favorites')
-          .get();
-
-      return snapshot.docs.map((doc) => doc.id).toList();
-    } catch (e) {
-      return [];
-    }
+  /// Get favorites for student (real-time)
+  static Stream<List<String>> getFavoritesStream(String studentId) {
+    return _firestore
+        .collection('students')
+        .doc(studentId)
+        .collection('favorites')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => doc.id).toList());
   }
 
-  // ==================== STATISTICS ====================
+  // ==================== STATISTICS (REAL-TIME) ====================
 
-  /// Get organizer statistics
-  static Future<Map<String, int>> getOrganizerStats() async {
-    try {
-      final events = await _firestore.collection('events').get();
-
-      int total = events.docs.length;
+  /// Get organizer statistics (real-time)
+  static Stream<Map<String, int>> getOrganizerStatsStream() {
+    return _firestore.collection('events').snapshots().map((snapshot) {
+      int total = snapshot.docs.length;
       int upcoming = 0;
       int totalAttendees = 0;
 
-      for (var doc in events.docs) {
+      for (var doc in snapshot.docs) {
         final data = doc.data();
         if (data['status'] == 'upcoming') upcoming++;
         totalAttendees += (data['registeredCount'] as int?) ?? 0;
@@ -545,12 +564,10 @@ class FirebaseService {
         'upcoming': upcoming,
         'totalAttendees': totalAttendees,
       };
-    } catch (e) {
-      return {'total': 0, 'upcoming': 0, 'totalAttendees': 0};
-    }
+    });
   }
 
-  /// Get attendee statistics
+  /// Get attendee statistics (for a specific student)
   static Future<Map<String, int>> getAttendeeStats(String studentId) async {
     try {
       final registrations = await getStudentRegistrations(studentId);
@@ -583,5 +600,44 @@ class FirebaseService {
     } catch (e) {
       return {'registered': 0, 'upcoming': 0, 'attended': 0};
     }
+  }
+
+  // ==================== ATTENDEE LIST FOR ORGANIZER ====================
+
+  /// Get all registered attendees for an event (real-time)
+  static Stream<List<Map<String, dynamic>>> getEventAttendeesStream(String eventId) {
+    return _firestore
+        .collection('events')
+        .doc(eventId)
+        .collection('registrations')
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .asyncMap((snapshot) async {
+      List<Map<String, dynamic>> attendees = [];
+
+      for (var doc in snapshot.docs) {
+        final regData = doc.data();
+        final studentId = regData['studentId'];
+
+        // Fetch student details
+        final studentDoc = await _firestore
+            .collection('students')
+            .doc(studentId)
+            .get();
+
+        if (studentDoc.exists) {
+          final studentData = studentDoc.data()!;
+          attendees.add({
+            'studentId': studentId,
+            'name': studentData['name'] ?? 'Unknown',
+            'attended': regData['attended'] ?? false,
+            'timestamp': regData['timestamp'],
+            'attendanceTime': regData['attendanceTime'],
+          });
+        }
+      }
+
+      return attendees;
+    });
   }
 }
