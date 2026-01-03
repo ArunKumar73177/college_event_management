@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'services/firebase_service.dart';
 
 class AttendeeDashboard extends StatefulWidget {
-  final String username; // Username from database
+  final String username;
 
   const AttendeeDashboard({Key? key, required this.username}) : super(key: key);
 
@@ -56,7 +57,6 @@ class EventAlert {
 }
 
 class _AttendeeDashboardState extends State<AttendeeDashboard> {
-  // Reduced mock event data
   final List<AttendeeEvent> mockEvents = [
     AttendeeEvent(
       id: '1',
@@ -84,7 +84,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     ),
   ];
 
-  // Mock alerts data
   List<EventAlert> alerts = [
     EventAlert(
       id: '1',
@@ -157,22 +156,19 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     _showQRDialog(event);
   }
 
-  void _handleLogout() {
-    showDialog(
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Logout'),
         content: const Text('Are you sure you want to logout?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushReplacementNamed(context, '/login');
-            },
+            onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
@@ -182,6 +178,17 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
         ],
       ),
     );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseService.logout();
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        }
+      } catch (e) {
+        _showSnackBar('Logout failed: ${e.toString()}');
+      }
+    }
   }
 
   void _showQRDialog(AttendeeEvent event) {
@@ -200,14 +207,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Event QR Code',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    const Text('Event QR Code', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -218,34 +219,17 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.grey.shade300),
                   ),
-                  child: QrImageView(
-                    data: registrationId,
-                    version: QrVersions.auto,
-                    size: 200,
-                  ),
+                  child: QrImageView(data: registrationId, version: QrVersions.auto, size: 200),
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  event.title,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
+                Text(event.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                 const SizedBox(height: 8),
-                Text(
-                  '${event.date} at ${event.time}',
-                  style: const TextStyle(color: Colors.grey),
-                ),
+                Text('${event.date} at ${event.time}', style: const TextStyle(color: Colors.grey)),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'Registration ID: $registrationId',
-                    style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                  ),
+                  decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                  child: Text('Registration ID: $registrationId', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
                 ),
               ],
             ),
@@ -256,7 +240,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   }
 
   void _showAlertsDialog() {
-    // Mark all alerts as read when dialog opens
     setState(() {
       for (var alert in alerts) {
         alert.isRead = true;
@@ -268,9 +251,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.7,
-          ),
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -279,25 +260,19 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Notifications',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    const Text('Notifications', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                   ],
                 ),
               ),
               const Divider(height: 1),
               Flexible(
                 child: alerts.isEmpty
-                    ? Padding(
-                  padding: const EdgeInsets.all(32),
+                    ? const Padding(
+                  padding: EdgeInsets.all(32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       Icon(Icons.notifications_off, size: 48, color: Colors.grey),
                       SizedBox(height: 16),
                       Text('No notifications', style: TextStyle(color: Colors.grey)),
@@ -313,15 +288,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     return ListTile(
                       leading: Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade200,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.notifications,
-                          color: Colors.grey,
-                          size: 20,
-                        ),
+                        decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.notifications, color: Colors.grey, size: 20),
                       ),
                       title: Text(alert.eventTitle),
                       subtitle: Column(
@@ -330,10 +298,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                           const SizedBox(height: 4),
                           Text(alert.message),
                           const SizedBox(height: 4),
-                          Text(
-                            _formatTimestamp(alert.timestamp),
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
+                          Text(_formatTimestamp(alert.timestamp), style: const TextStyle(fontSize: 12, color: Colors.grey)),
                         ],
                       ),
                       isThreeLine: true,
@@ -356,9 +321,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.7,
-          ),
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -367,34 +330,24 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Favorite Events',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    const Text('Favorite Events', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                   ],
                 ),
               ),
               const Divider(height: 1),
               Flexible(
                 child: favoriteEvents.isEmpty
-                    ? Padding(
-                  padding: const EdgeInsets.all(32),
+                    ? const Padding(
+                  padding: EdgeInsets.all(32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
+                    children: [
                       Icon(Icons.favorite_border, size: 48, color: Colors.grey),
                       SizedBox(height: 16),
                       Text('No favorite events', style: TextStyle(color: Colors.grey)),
                       SizedBox(height: 8),
-                      Text(
-                        'Add events to favorites to see them here',
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
+                      Text('Add events to favorites to see them here', style: TextStyle(color: Colors.grey, fontSize: 12), textAlign: TextAlign.center),
                     ],
                   ),
                 )
@@ -407,15 +360,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     return ListTile(
                       leading: Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.favorite,
-                          color: Colors.red,
-                          size: 20,
-                        ),
+                        decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.favorite, color: Colors.red, size: 20),
                       ),
                       title: Text(event.title),
                       subtitle: Column(
@@ -481,24 +427,18 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
 
     if (searchQuery.isNotEmpty) {
       final query = searchQuery.toLowerCase();
-      filtered = filtered
-          .where((e) =>
+      filtered = filtered.where((e) =>
       e.title.toLowerCase().contains(query) ||
           e.description.toLowerCase().contains(query) ||
-          e.location.toLowerCase().contains(query))
-          .toList();
+          e.location.toLowerCase().contains(query)).toList();
     }
 
     return filtered;
   }
 
   int get registeredCount => registeredEventIds.length;
-  int get upcomingRegisteredCount => mockEvents
-      .where((e) => e.status == EventStatus.upcoming && registeredEventIds.contains(e.id))
-      .length;
-  int get completedAttendedCount => mockEvents
-      .where((e) => e.status == EventStatus.completed && registeredEventIds.contains(e.id))
-      .length;
+  int get upcomingRegisteredCount => mockEvents.where((e) => e.status == EventStatus.upcoming && registeredEventIds.contains(e.id)).length;
+  int get completedAttendedCount => mockEvents.where((e) => e.status == EventStatus.completed && registeredEventIds.contains(e.id)).length;
   int get unreadAlertsCount => alerts.where((a) => !a.isRead).length;
 
   @override
@@ -507,7 +447,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       backgroundColor: Colors.grey[50],
       body: CustomScrollView(
         slivers: [
-          // Header
           SliverAppBar(
             backgroundColor: Colors.white,
             pinned: true,
@@ -527,18 +466,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Welcome, ${widget.username}',
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const Text(
-                                'Discover & Register Events',
-                                style: TextStyle(color: Colors.grey),
-                              ),
+                              Text('Welcome, ${widget.username}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                              const Text('Discover & Register Events', style: TextStyle(color: Colors.grey)),
                             ],
                           ),
                         ),
@@ -547,77 +476,33 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                           children: [
                             Stack(
                               children: [
-                                IconButton(
-                                  onPressed: _showAlertsDialog,
-                                  icon: const Icon(Icons.notifications),
-                                  color: Colors.black,
-                                ),
+                                IconButton(onPressed: _showAlertsDialog, icon: const Icon(Icons.notifications), color: Colors.black),
                                 if (unreadAlertsCount > 0)
                                   Positioned(
                                     right: 8,
                                     top: 8,
                                     child: Container(
                                       padding: const EdgeInsets.all(4),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.red,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      constraints: const BoxConstraints(
-                                        minWidth: 16,
-                                        minHeight: 16,
-                                      ),
-                                      child: Text(
-                                        unreadAlertsCount.toString(),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
+                                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                                      child: Text(unreadAlertsCount.toString(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                                     ),
                                   ),
                               ],
                             ),
-                            IconButton(
-                              onPressed: _handleLogout,
-                              icon: const Icon(Icons.logout),
-                              color: Colors.red,
-                            ),
+                            IconButton(onPressed: _handleLogout, icon: const Icon(Icons.logout), color: Colors.red, tooltip: 'Logout'),
                           ],
                         ),
                       ],
                     ),
                     const SizedBox(height: 20),
-                    // Stats Cards
                     Row(
                       children: [
-                        Expanded(
-                          child: _buildStatCard(
-                            'Registered',
-                            registeredCount.toString(),
-                            Icons.calendar_today,
-                            Colors.blue,
-                          ),
-                        ),
+                        Expanded(child: _buildStatCard('Registered', registeredCount.toString(), Icons.calendar_today, Colors.blue)),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildStatCard(
-                            'Upcoming',
-                            upcomingRegisteredCount.toString(),
-                            Icons.trending_up,
-                            Colors.green,
-                          ),
-                        ),
+                        Expanded(child: _buildStatCard('Upcoming', upcomingRegisteredCount.toString(), Icons.trending_up, Colors.green)),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildStatCard(
-                            'Attended',
-                            completedAttendedCount.toString(),
-                            Icons.check_circle,
-                            Colors.purple,
-                          ),
-                        ),
+                        Expanded(child: _buildStatCard('Attended', completedAttendedCount.toString(), Icons.check_circle, Colors.purple)),
                       ],
                     ),
                   ],
@@ -625,24 +510,18 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               ),
             ),
           ),
-
-          // Main Content
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  // Search
                   TextField(
                     decoration: InputDecoration(
                       hintText: 'Search events...',
                       prefixIcon: const Icon(Icons.search),
                       filled: true,
                       fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                     ),
                     onChanged: (value) {
                       setState(() {
@@ -651,8 +530,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     },
                   ),
                   const SizedBox(height: 16),
-
-                  // Filter Buttons
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -666,24 +543,15 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Category Dropdown
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
                     child: DropdownButton<String>(
                       value: selectedCategory,
                       isExpanded: true,
                       underline: const SizedBox(),
                       items: categories.map((String category) {
-                        return DropdownMenuItem<String>(
-                          value: category,
-                          child: Text(category),
-                        );
+                        return DropdownMenuItem<String>(value: category, child: Text(category));
                       }).toList(),
                       onChanged: (String? newValue) {
                         setState(() {
@@ -693,23 +561,17 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Favorites count
                   if (activeFilter == null)
                     InkWell(
                       onTap: _showFavoritesDialog,
                       child: Container(
                         padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade100),
-                        ),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade100)),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: const [
+                            const Row(
+                              children: [
                                 Icon(Icons.favorite, color: Colors.red, size: 20),
                                 SizedBox(width: 8),
                                 Text('Favorites', style: TextStyle(color: Colors.grey)),
@@ -719,10 +581,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                               children: [
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade200,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
+                                  decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12)),
                                   child: Text(favoriteEventIds.length.toString()),
                                 ),
                                 const SizedBox(width: 8),
@@ -734,8 +593,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                       ),
                     ),
                   const SizedBox(height: 16),
-
-                  // Event List
                   filteredEvents.isEmpty
                       ? _buildEmptyState()
                       : ListView.builder(
@@ -758,35 +615,18 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   Widget _buildStatCard(String label, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
+            decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
             child: Icon(icon, color: color, size: 20),
           ),
           const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.grey, fontSize: 12),
-            overflow: TextOverflow.ellipsis,
-          ),
+          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12), overflow: TextOverflow.ellipsis),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
+          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );
@@ -804,15 +644,12 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       },
       backgroundColor: Colors.white,
       selectedColor: Colors.black,
-      labelStyle: TextStyle(
-        color: isActive ? Colors.white : Colors.black,
-      ),
+      labelStyle: TextStyle(color: isActive ? Colors.white : Colors.black),
     );
   }
 
   Widget _buildEventCard(AttendeeEvent event) {
     final isRegistered = registeredEventIds.contains(event.id);
-    final isFavorite = favoriteEventIds.contains(event.id);
     final registrationPercentage = (event.registered / event.capacity * 100).round();
 
     return Card(
@@ -825,51 +662,24 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    event.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 2,
-                  ),
+                  child: Text(event.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis, maxLines: 2),
                 ),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: event.status == EventStatus.upcoming
-                        ? Colors.black
-                        : Colors.grey,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    event.status == EventStatus.upcoming ? 'Upcoming' : 'Completed',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
+                  decoration: BoxDecoration(color: event.status == EventStatus.upcoming ? Colors.black : Colors.grey, borderRadius: BorderRadius.circular(12)),
+                  child: Text(event.status == EventStatus.upcoming ? 'Upcoming' : 'Completed', style: const TextStyle(color: Colors.white, fontSize: 12)),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              event.description,
-              style: const TextStyle(color: Colors.grey),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text(event.description, style: const TextStyle(color: Colors.grey), maxLines: 2, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 12),
             Row(
               children: [
                 const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${event.date} at ${event.time}',
-                    style: const TextStyle(color: Colors.grey, fontSize: 14),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                Expanded(child: Text('${event.date} at ${event.time}', style: const TextStyle(color: Colors.grey, fontSize: 14), overflow: TextOverflow.ellipsis)),
               ],
             ),
             const SizedBox(height: 8),
@@ -877,13 +687,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               children: [
                 const Icon(Icons.location_on, size: 16, color: Colors.grey),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    event.location,
-                    style: const TextStyle(color: Colors.grey, fontSize: 14),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                Expanded(child: Text(event.location, style: const TextStyle(color: Colors.grey, fontSize: 14), overflow: TextOverflow.ellipsis)),
               ],
             ),
             const SizedBox(height: 8),
@@ -891,10 +695,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               children: [
                 const Icon(Icons.people, size: 16, color: Colors.grey),
                 const SizedBox(width: 8),
-                Text(
-                  '${event.registered} / ${event.capacity}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 14),
-                ),
+                Text('${event.registered} / ${event.capacity}', style: const TextStyle(color: Colors.grey, fontSize: 14)),
               ],
             ),
             const SizedBox(height: 12),
@@ -905,16 +706,11 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Registration', style: TextStyle(fontSize: 12)),
-                    Text('$registrationPercentage%',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    Text('$registrationPercentage%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   ],
                 ),
                 const SizedBox(height: 4),
-                LinearProgressIndicator(
-                  value: registrationPercentage / 100,
-                  backgroundColor: Colors.grey[200],
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-                ),
+                LinearProgressIndicator(value: registrationPercentage / 100, backgroundColor: Colors.grey[200], valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue)),
               ],
             ),
             const SizedBox(height: 16),
@@ -926,34 +722,20 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                   width: MediaQuery.of(context).size.width * 0.5,
                   child: ElevatedButton(
                     onPressed: isRegistered
-                        ? (event.status == EventStatus.upcoming
-                        ? () => _handleUnregister(event.id)
-                        : null)
-                        : (event.status == EventStatus.upcoming &&
-                        event.registered < event.capacity
-                        ? () => _handleRegister(event.id)
-                        : null),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isRegistered ? Colors.green : Colors.black,
-                      foregroundColor: Colors.white,
-                    ),
+                        ? (event.status == EventStatus.upcoming ? () => _handleUnregister(event.id) : null)
+                        : (event.status == EventStatus.upcoming && event.registered < event.capacity ? () => _handleRegister(event.id) : null),
+                    style: ElevatedButton.styleFrom(backgroundColor: isRegistered ? Colors.green : Colors.black, foregroundColor: Colors.white),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          isRegistered ? Icons.check_circle : Icons.person_add,
-                          size: 18,
-                        ),
+                        Icon(isRegistered ? Icons.check_circle : Icons.person_add, size: 18),
                         const SizedBox(width: 8),
                         Text(isRegistered ? 'Registered' : 'Register'),
                       ],
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: () => _showEventOptions(event),
-                  icon: const Icon(Icons.more_vert, color: Colors.grey),
-                ),
+                IconButton(onPressed: () => _showEventOptions(event), icon: const Icon(Icons.more_vert, color: Colors.grey)),
               ],
             ),
           ],
@@ -963,22 +745,16 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(48),
+        padding: EdgeInsets.all(48),
         child: Column(
-          children: const [
+          children: [
             Icon(Icons.calendar_today, size: 64, color: Colors.grey),
             SizedBox(height: 16),
-            Text(
-              'No events found',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            Text('No events found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 8),
-            Text(
-              'Try adjusting your search or filters',
-              style: TextStyle(color: Colors.grey),
-            ),
+            Text('Try adjusting your search or filters', style: TextStyle(color: Colors.grey)),
           ],
         ),
       ),

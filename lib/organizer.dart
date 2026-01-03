@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'services/firebase_service.dart';
 
 void main() {
   runApp(const EventOrganizerApp());
@@ -86,8 +87,9 @@ class OrganizerDashboard extends StatefulWidget {
 }
 
 class _OrganizerDashboardState extends State<OrganizerDashboard> {
-  // TODO: Replace with actual organizer name from database
-  final String organizerName = "Organizer Name";
+  String organizerName = "Loading...";
+  String? studentId;
+  bool isLoading = true;
 
   List<Event> events = [
     Event(
@@ -120,6 +122,67 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   Event? selectedEvent;
   String searchQuery = '';
   EventStatus? activeFilter;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final user = await FirebaseService.getCurrentUser();
+      if (user != null) {
+        setState(() {
+          organizerName = user['name'] ?? 'Organizer';
+          studentId = user['studentId'];
+          isLoading = false;
+        });
+      } else {
+        // If no user found, redirect to login
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+      }
+    } catch (e) {
+      setState(() {
+        organizerName = 'Organizer';
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _handleLogout() async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseService.logout();
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+      } catch (e) {
+        _showSnackBar('Logout failed: ${e.toString()}');
+      }
+    }
+  }
 
   void _createEvent(Event event) {
     setState(() {
@@ -221,8 +284,13 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         ),
         actions: currentView == DashboardView.list
             ? [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.red),
+            onPressed: _handleLogout,
+            tooltip: 'Logout',
+          ),
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 16, left: 8),
             child: ElevatedButton.icon(
               icon: const Icon(Icons.add, size: 18),
               label: const Text('New'),
@@ -240,7 +308,9 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         ]
             : null,
       ),
-      body: _buildBody(),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _buildBody(),
     );
   }
 
