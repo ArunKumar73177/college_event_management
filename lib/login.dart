@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'services/firebase_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -16,12 +17,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   final TextEditingController _organizerPasswordController = TextEditingController();
   final TextEditingController _organizerCaptchaController = TextEditingController();
   String _organizerCaptchaCode = '';
+  bool _organizerLoading = false;
 
   // Attendee fields
   final TextEditingController _attendeeStudentIdController = TextEditingController();
   final TextEditingController _attendeePasswordController = TextEditingController();
   final TextEditingController _attendeeCaptchaController = TextEditingController();
   String _attendeeCaptchaCode = '';
+  bool _attendeeLoading = false;
 
   @override
   void initState() {
@@ -29,6 +32,23 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _tabController = TabController(length: 2, vsync: this);
     _organizerCaptchaCode = _generateCaptcha();
     _attendeeCaptchaCode = _generateCaptcha();
+    _checkExistingSession();
+  }
+
+  /// Check if user is already logged in
+  Future<void> _checkExistingSession() async {
+    final user = await FirebaseService.getCurrentUser();
+    if (user != null && mounted) {
+      if (user['role'] == 'organizer') {
+        Navigator.pushReplacementNamed(context, '/organizer');
+      } else {
+        Navigator.pushReplacementNamed(
+          context,
+          '/attendee',
+          arguments: user['name'],
+        );
+      }
+    }
   }
 
   @override
@@ -65,7 +85,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     });
   }
 
-  void _handleOrganizerLogin() {
+  Future<void> _handleOrganizerLogin() async {
     if (_organizerStudentIdController.text.isEmpty) {
       _showSnackBar('Please enter Student ID');
       return;
@@ -82,11 +102,36 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       return;
     }
 
-    print('Organizer login: ${_organizerStudentIdController.text}');
-    Navigator.pushReplacementNamed(context, '/organizer');
+    setState(() {
+      _organizerLoading = true;
+    });
+
+    try {
+      final user = await FirebaseService.loginWithStudentId(
+        _organizerStudentIdController.text.trim(),
+        _organizerPasswordController.text,
+      );
+
+      if (user['role'] != 'organizer') {
+        throw 'This account is not an organizer account';
+      }
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/organizer');
+      }
+    } catch (e) {
+      _showSnackBar(e.toString());
+      _refreshOrganizerCaptcha();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _organizerLoading = false;
+        });
+      }
+    }
   }
 
-  void _handleAttendeeLogin() {
+  Future<void> _handleAttendeeLogin() async {
     if (_attendeeStudentIdController.text.isEmpty) {
       _showSnackBar('Please enter Student ID');
       return;
@@ -103,15 +148,44 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       return;
     }
 
-    print('Attendee login: ${_attendeeStudentIdController.text}');
-    Navigator.pushReplacementNamed(context, '/attendee');
+    setState(() {
+      _attendeeLoading = true;
+    });
+
+    try {
+      final user = await FirebaseService.loginWithStudentId(
+        _attendeeStudentIdController.text.trim(),
+        _attendeePasswordController.text,
+      );
+
+      if (user['role'] != 'attendee') {
+        throw 'This account is not an attendee account';
+      }
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(
+          context,
+          '/attendee',
+          arguments: user['name'],
+        );
+      }
+    } catch (e) {
+      _showSnackBar(e.toString());
+      _refreshAttendeeCaptcha();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _attendeeLoading = false;
+        });
+      }
+    }
   }
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        duration: const Duration(seconds: 2),
+        duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -289,7 +363,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Logo Container - FIXED
+                    // Logo Container
                     Container(
                       width: 140,
                       height: 140,
@@ -427,6 +501,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                         onLogin: _handleOrganizerLogin,
                                         buttonText: 'Login as Organizer',
                                         studentIdHint: 'e.g., 2024001',
+                                        isLoading: _organizerLoading,
                                       ),
                                       _buildLoginForm(
                                         studentIdController: _attendeeStudentIdController,
@@ -437,6 +512,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                         onLogin: _handleAttendeeLogin,
                                         buttonText: 'Login as Attendee',
                                         studentIdHint: 'e.g., 2024123',
+                                        isLoading: _attendeeLoading,
                                       ),
                                     ],
                                   ),
@@ -486,6 +562,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     required VoidCallback onLogin,
     required String buttonText,
     required String studentIdHint,
+    required bool isLoading,
   }) {
     return Form(
       child: Column(
@@ -499,6 +576,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           const SizedBox(height: 8),
           TextField(
             controller: studentIdController,
+            enabled: !isLoading,
             decoration: InputDecoration(
               hintText: studentIdHint,
               border: OutlineInputBorder(
@@ -519,6 +597,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           const SizedBox(height: 8),
           TextField(
             controller: passwordController,
+            enabled: !isLoading,
             obscureText: true,
             decoration: InputDecoration(
               hintText: 'Enter your password',
@@ -543,6 +622,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               Expanded(
                 child: TextField(
                   controller: captchaController,
+                  enabled: !isLoading,
                   decoration: InputDecoration(
                     hintText: 'Enter code',
                     border: OutlineInputBorder(
@@ -576,7 +656,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
               ),
               const SizedBox(width: 8),
               IconButton(
-                onPressed: onRefreshCaptcha,
+                onPressed: isLoading ? null : onRefreshCaptcha,
                 icon: const Icon(Icons.refresh),
                 style: IconButton.styleFrom(
                   side: BorderSide(color: Colors.grey.shade300),
@@ -590,7 +670,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: onLogin,
+              onPressed: isLoading ? null : onLogin,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.grey.shade900,
                 foregroundColor: Colors.white,
@@ -599,7 +679,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   borderRadius: BorderRadius.circular(6),
                 ),
               ),
-              child: Text(buttonText),
+              child: isLoading
+                  ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+                  : Text(buttonText),
             ),
           ),
         ],

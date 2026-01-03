@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';   // 🔥 ADDED
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
 import 'login.dart';
 import 'organizer.dart';
 import 'attendee.dart';
+import 'firebase_options.dart';
 
-Future<void> main() async {                            // 🔥 MODIFIED
-  WidgetsFlutterBinding.ensureInitialized();            // 🔥 ADDED
-  await Firebase.initializeApp();                       // 🔥 ADDED
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MyApp());
 }
 
@@ -32,7 +36,12 @@ class MyApp extends StatelessWidget {
         '/': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/organizer': (context) => const OrganizerDashboard(),
-        '/attendee': (context) => const AttendeeDashboard(username: ''),
+        '/attendee': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments;
+          return AttendeeDashboard(
+            username: args is String ? args : 'User',
+          );
+        },
       },
     );
   }
@@ -132,9 +141,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                         ],
                       ),
                       padding: const EdgeInsets.all(30),
-                      child: Image.asset(
-                        'assets/images/app_iconas.png',
-                        fit: BoxFit.contain,
+                      child: Icon(
+                        Icons.event,
+                        size: 100,
+                        color: Colors.blue.shade700,
                       ),
                     ),
 
@@ -198,61 +208,5 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         ),
       ),
     );
-  }
-}
-
-/* ========================= HELPERS ========================= */
-
-extension NavigationExtension on BuildContext {
-  void navigateToLogin() {
-    Navigator.pushReplacementNamed(this, '/login');
-  }
-
-  void navigateToOrganizer() {
-    Navigator.pushReplacementNamed(this, '/organizer');
-  }
-
-  void navigateToAttendee() {
-    Navigator.pushReplacementNamed(this, '/attendee');
-  }
-
-  void goBack() {
-    Navigator.pop(this);
-  }
-
-  void showMessage(String message) {
-    ScaffoldMessenger.of(this).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  Future<bool> showConfirmDialog({
-    required String title,
-    required String message,
-    String confirmText = 'Confirm',
-    String cancelText = 'Cancel',
-  }) async {
-    final result = await showDialog<bool>(
-      context: this,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(cancelText),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(confirmText),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
   }
 }
