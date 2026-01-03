@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firebase_service.dart';
 
 class AttendeeDashboard extends StatefulWidget {
@@ -12,7 +13,7 @@ class AttendeeDashboard extends StatefulWidget {
   State<AttendeeDashboard> createState() => _AttendeeDashboardState();
 }
 
-enum EventStatus { upcoming, completed }
+enum EventStatus { upcoming, ongoing, completed }
 
 class AttendeeEvent {
   final String id;
@@ -38,75 +39,46 @@ class AttendeeEvent {
     required this.registered,
     required this.status,
   });
-}
 
-class EventAlert {
-  final String id;
-  final String eventTitle;
-  final String message;
-  final DateTime timestamp;
-  bool isRead;
+  factory AttendeeEvent.fromFirestore(Map<String, dynamic> data) {
+    DateTime dateTime = data['date'] is DateTime
+        ? data['date']
+        : (data['date'] as Timestamp).toDate();
 
-  EventAlert({
-    required this.id,
-    required this.eventTitle,
-    required this.message,
-    required this.timestamp,
-    this.isRead = false,
-  });
+    EventStatus status;
+    switch (data['status']) {
+      case 'ongoing':
+        status = EventStatus.ongoing;
+        break;
+      case 'completed':
+        status = EventStatus.completed;
+        break;
+      default:
+        status = EventStatus.upcoming;
+    }
+
+    return AttendeeEvent(
+      id: data['id'],
+      title: data['title'] ?? '',
+      description: data['description'] ?? '',
+      date: DateFormat('MMM dd, yyyy').format(dateTime),
+      time: data['time'] ?? '',
+      location: data['location'] ?? '',
+      category: data['category'] ?? '',
+      capacity: data['capacity'] ?? 0,
+      registered: data['registeredCount'] ?? 0,
+      status: status,
+    );
+  }
 }
 
 class _AttendeeDashboardState extends State<AttendeeDashboard> {
-  final List<AttendeeEvent> mockEvents = [
-    AttendeeEvent(
-      id: '1',
-      title: 'Tech Talk: AI Workshop',
-      description: 'Learn the fundamentals of AI and machine learning',
-      date: 'Jan 15, 2026',
-      time: '10:00',
-      location: 'Auditorium Hall A',
-      category: 'Technical',
-      capacity: 200,
-      registered: 145,
-      status: EventStatus.upcoming,
-    ),
-    AttendeeEvent(
-      id: '2',
-      title: 'Cultural Night 2026',
-      description: 'Evening of music, dance, and performances',
-      date: 'Feb 5, 2026',
-      time: '18:00',
-      location: 'Open Air Theatre',
-      category: 'Cultural',
-      capacity: 300,
-      registered: 267,
-      status: EventStatus.upcoming,
-    ),
-  ];
-
-  List<EventAlert> alerts = [
-    EventAlert(
-      id: '1',
-      eventTitle: 'Tech Talk: AI Workshop',
-      message: 'Event starts in 2 days! Don\'t forget to attend.',
-      timestamp: DateTime.now().subtract(const Duration(hours: 2)),
-      isRead: false,
-    ),
-    EventAlert(
-      id: '2',
-      eventTitle: 'Cultural Night 2026',
-      message: 'New performers added to the lineup!',
-      timestamp: DateTime.now().subtract(const Duration(days: 1)),
-      isRead: false,
-    ),
-    EventAlert(
-      id: '3',
-      eventTitle: 'System Notification',
-      message: 'Your profile has been updated successfully.',
-      timestamp: DateTime.now().subtract(const Duration(days: 3)),
-      isRead: true,
-    ),
-  ];
+  String? studentId;
+  Set<String> registeredEventIds = {};
+  Set<String> favoriteEventIds = {};
+  String searchQuery = '';
+  String selectedCategory = 'All Categories';
+  EventStatus? activeFilter;
 
   final List<String> categories = [
     'All Categories',
@@ -116,43 +88,89 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     'Career'
   ];
 
-  Set<String> registeredEventIds = {};
-  Set<String> favoriteEventIds = {};
-  String searchQuery = '';
-  String selectedCategory = 'All Categories';
-  EventStatus? activeFilter;
-  AttendeeEvent? selectedEventForQR;
-
-  void _handleRegister(String eventId) {
-    setState(() {
-      registeredEventIds.add(eventId);
-    });
-    _showSnackBar('Successfully registered for the event!');
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
   }
 
-  void _handleUnregister(String eventId) {
-    setState(() {
-      registeredEventIds.remove(eventId);
-    });
-    _showSnackBar('Registration cancelled');
+  Future<void> _loadUserData() async {
+    final user = await FirebaseService.getCurrentUser();
+    if (user != null) {
+      setState(() {
+        studentId = user['studentId'];
+      });
+    } else {
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    }
   }
 
-  void _handleToggleFavorite(String eventId) {
-    setState(() {
+  Future<void> _handleRegister(String eventId) async {
+    if (studentId == null) return;
+
+    try {
+      await FirebaseService.registerForEvent(eventId, studentId!);
+      _showSnackBar('Successfully registered for the event!');
+    } catch (e) {
+      _showSnackBar(e.toString());
+    }
+  }
+
+  Future<void> _handleUnregister(String eventId) async {
+    if (studentId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unregister'),
+        content: const Text('Are you sure you want to cancel your registration?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Unregister'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseService.unregisterFromEvent(eventId, studentId!);
+        _showSnackBar('Registration cancelled');
+      } catch (e) {
+        _showSnackBar(e.toString());
+      }
+    }
+  }
+
+  Future<void> _handleToggleFavorite(String eventId) async {
+    if (studentId == null) return;
+
+    try {
       if (favoriteEventIds.contains(eventId)) {
-        favoriteEventIds.remove(eventId);
+        await FirebaseService.removeFromFavorites(studentId!, eventId);
         _showSnackBar('Removed from favorites');
       } else {
-        favoriteEventIds.add(eventId);
+        await FirebaseService.addToFavorites(studentId!, eventId);
         _showSnackBar('Added to favorites');
       }
-    });
+    } catch (e) {
+      _showSnackBar(e.toString());
+    }
   }
 
   void _handleViewQR(AttendeeEvent event) {
-    setState(() {
-      selectedEventForQR = event;
-    });
+    if (studentId == null) return;
     _showQRDialog(event);
   }
 
@@ -192,7 +210,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   }
 
   void _showQRDialog(AttendeeEvent event) {
-    final registrationId = 'REG-${event.id}-${DateTime.now().millisecondsSinceEpoch}';
+    final qrData = FirebaseService.generateQRData(event.id, studentId!);
 
     showDialog(
       context: context,
@@ -219,17 +237,19 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.grey.shade300),
                   ),
-                  child: QrImageView(data: registrationId, version: QrVersions.auto, size: 200),
+                  child: QrImageView(data: qrData, version: QrVersions.auto, size: 200),
                 ),
                 const SizedBox(height: 16),
                 Text(event.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                 const SizedBox(height: 8),
                 Text('${event.date} at ${event.time}', style: const TextStyle(color: Colors.grey)),
+                const SizedBox(height: 8),
+                const Text('Valid for 5 minutes', style: TextStyle(color: Colors.red, fontSize: 12)),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
-                  child: Text('Registration ID: $registrationId', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                  child: Text('Student ID: $studentId', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
                 ),
               ],
             ),
@@ -239,12 +259,56 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
+  Widget _buildEmptyState() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(48),
+        child: Column(
+          children: [
+            Icon(Icons.calendar_today, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text('No events found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            Text('Try adjusting your search or filters', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEventOptions(AttendeeEvent event) {
+    final isFavorite = favoriteEventIds.contains(event.id);
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? Colors.red : null),
+              title: Text(isFavorite ? 'Remove from Favorites' : 'Add to Favorites'),
+              onTap: () {
+                Navigator.pop(context);
+                _handleToggleFavorite(event.id);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: const Text('Share Event'),
+              onTap: () {
+                Navigator.pop(context);
+                _showSnackBar('Event link copied to clipboard');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showAlertsDialog() {
-    setState(() {
-      for (var alert in alerts) {
-        alert.isRead = true;
-      }
-    });
+    if (studentId == null) return;
 
     showDialog(
       context: context,
@@ -267,41 +331,62 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               ),
               const Divider(height: 1),
               Flexible(
-                child: alerts.isEmpty
-                    ? const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.notifications_off, size: 48, color: Colors.grey),
-                      SizedBox(height: 16),
-                      Text('No notifications', style: TextStyle(color: Colors.grey)),
-                    ],
-                  ),
-                )
-                    : ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: alerts.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final alert = alerts[index];
-                    return ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
-                        child: const Icon(Icons.notifications, color: Colors.grey, size: 20),
-                      ),
-                      title: Text(alert.eventTitle),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text(alert.message),
-                          const SizedBox(height: 4),
-                          Text(_formatTimestamp(alert.timestamp), style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                        ],
-                      ),
-                      isThreeLine: true,
+                child: StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: FirebaseService.getAlertsStream(studentId!),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.notifications_off, size: 48, color: Colors.grey),
+                            SizedBox(height: 16),
+                            Text('No notifications', style: TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final alerts = snapshot.data!;
+
+                    // Mark all as read when dialog opens
+                    Future.delayed(Duration.zero, () {
+                      FirebaseService.markAllAlertsAsRead(studentId!);
+                    });
+
+                    return ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: alerts.length,
+                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final alert = alerts[index];
+                        return ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
+                            child: const Icon(Icons.notifications, color: Colors.grey, size: 20),
+                          ),
+                          title: Text(alert['eventTitle'] ?? 'Notification'),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              Text(alert['message'] ?? ''),
+                              const SizedBox(height: 4),
+                              Text(
+                                _formatTimestamp(alert['timestamp']),
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                          isThreeLine: true,
+                        );
+                      },
                     );
                   },
                 ),
@@ -313,9 +398,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
-  void _showFavoritesDialog() {
-    final favoriteEvents = mockEvents.where((e) => favoriteEventIds.contains(e.id)).toList();
-
+  void _showFavoritesDialog(List<AttendeeEvent> allEvents) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -337,7 +420,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               ),
               const Divider(height: 1),
               Flexible(
-                child: favoriteEvents.isEmpty
+                child: favoriteEventIds.isEmpty
                     ? const Padding(
                   padding: EdgeInsets.all(32),
                   child: Column(
@@ -353,10 +436,12 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 )
                     : ListView.separated(
                   shrinkWrap: true,
-                  itemCount: favoriteEvents.length,
+                  itemCount: favoriteEventIds.length,
                   separatorBuilder: (context, index) => const Divider(height: 1),
                   itemBuilder: (context, index) {
-                    final event = favoriteEvents[index];
+                    final eventId = favoriteEventIds.elementAt(index);
+                    final event = allEvents.firstWhere((e) => e.id == eventId, orElse: () => allEvents.first);
+
                     return ListTile(
                       leading: Container(
                         padding: const EdgeInsets.all(8),
@@ -377,11 +462,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                       trailing: IconButton(
                         icon: const Icon(Icons.close, color: Colors.grey),
                         onPressed: () {
-                          setState(() {
-                            favoriteEventIds.remove(event.id);
-                          });
+                          _handleToggleFavorite(eventId);
                           Navigator.pop(context);
-                          _showSnackBar('Removed from favorites');
                         },
                       ),
                     );
@@ -395,7 +477,9 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
-  String _formatTimestamp(DateTime timestamp) {
+  String _formatTimestamp(DateTime? timestamp) {
+    if (timestamp == null) return 'Just now';
+
     final now = DateTime.now();
     final difference = now.difference(timestamp);
 
@@ -414,8 +498,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
-  List<AttendeeEvent> get filteredEvents {
-    var filtered = mockEvents;
+  List<AttendeeEvent> _filterEvents(List<AttendeeEvent> events) {
+    var filtered = events;
 
     if (activeFilter != null) {
       filtered = filtered.where((e) => e.status == activeFilter).toList();
@@ -436,178 +520,237 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     return filtered;
   }
 
-  int get registeredCount => registeredEventIds.length;
-  int get upcomingRegisteredCount => mockEvents.where((e) => e.status == EventStatus.upcoming && registeredEventIds.contains(e.id)).length;
-  int get completedAttendedCount => mockEvents.where((e) => e.status == EventStatus.completed && registeredEventIds.contains(e.id)).length;
-  int get unreadAlertsCount => alerts.where((a) => !a.isRead).length;
-
   @override
   Widget build(BuildContext context) {
+    if (studentId == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            backgroundColor: Colors.white,
-            pinned: true,
-            expandedHeight: 240,
-            elevation: 0,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: FirebaseService.getActiveEventsStream(),
+        builder: (context, eventsSnapshot) {
+          if (eventsSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (eventsSnapshot.hasError) {
+            return Center(child: Text('Error: ${eventsSnapshot.error}'));
+          }
+
+          final events = eventsSnapshot.data?.map((data) => AttendeeEvent.fromFirestore(data)).toList() ?? [];
+
+          return StreamBuilder<List<String>>(
+            stream: FirebaseService.getStudentRegistrationsStream(studentId!),
+            builder: (context, regSnapshot) {
+              if (regSnapshot.hasData) {
+                registeredEventIds = regSnapshot.data!.toSet();
+              }
+
+              return StreamBuilder<List<String>>(
+                stream: FirebaseService.getFavoritesStream(studentId!),
+                builder: (context, favSnapshot) {
+                  if (favSnapshot.hasData) {
+                    favoriteEventIds = favSnapshot.data!.toSet();
+                  }
+
+                  final filteredEvents = _filterEvents(events);
+                  final registeredCount = registeredEventIds.length;
+                  final upcomingRegisteredCount = events.where((e) => e.status == EventStatus.upcoming && registeredEventIds.contains(e.id)).length;
+                  final completedAttendedCount = events.where((e) => e.status == EventStatus.completed && registeredEventIds.contains(e.id)).length;
+
+                  return CustomScrollView(
+                    slivers: [
+                      SliverAppBar(
+                        backgroundColor: Colors.white,
+                        pinned: true,
+                        expandedHeight: 240,
+                        elevation: 0,
+                        flexibleSpace: FlexibleSpaceBar(
+                          background: Container(
+                            color: Colors.white,
+                            padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Welcome, ${widget.username}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                                          const Text('Discover & Register Events', style: TextStyle(color: Colors.grey)),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Row(
+                                      children: [
+                                        StreamBuilder<int>(
+                                          stream: FirebaseService.getUnreadAlertsCountStream(studentId!),
+                                          builder: (context, alertSnapshot) {
+                                            final unreadCount = alertSnapshot.data ?? 0;
+
+                                            return Stack(
+                                              children: [
+                                                IconButton(
+                                                  onPressed: _showAlertsDialog,
+                                                  icon: const Icon(Icons.notifications),
+                                                  color: Colors.black,
+                                                ),
+                                                if (unreadCount > 0)
+                                                  Positioned(
+                                                    right: 8,
+                                                    top: 8,
+                                                    child: Container(
+                                                      padding: const EdgeInsets.all(4),
+                                                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                                                      child: Text(
+                                                        unreadCount.toString(),
+                                                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                                        textAlign: TextAlign.center,
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                        IconButton(
+                                          onPressed: _handleLogout,
+                                          icon: const Icon(Icons.logout),
+                                          color: Colors.red,
+                                          tooltip: 'Logout',
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                Row(
+                                  children: [
+                                    Expanded(child: _buildStatCard('Registered', registeredCount.toString(), Icons.calendar_today, Colors.blue)),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: _buildStatCard('Upcoming', upcomingRegisteredCount.toString(), Icons.trending_up, Colors.green)),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: _buildStatCard('Attended', completedAttendedCount.toString(), Icons.check_circle, Colors.purple)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Welcome, ${widget.username}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                              const Text('Discover & Register Events', style: TextStyle(color: Colors.grey)),
+                              TextField(
+                                decoration: InputDecoration(
+                                  hintText: 'Search events...',
+                                  prefixIcon: const Icon(Icons.search),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                                ),
+                                onChanged: (value) {
+                                  setState(() {
+                                    searchQuery = value;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    _buildFilterChip('All', null),
+                                    const SizedBox(width: 8),
+                                    _buildFilterChip('Upcoming', EventStatus.upcoming),
+                                    const SizedBox(width: 8),
+                                    _buildFilterChip('Completed', EventStatus.completed),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+                                child: DropdownButton<String>(
+                                  value: selectedCategory,
+                                  isExpanded: true,
+                                  underline: const SizedBox(),
+                                  items: categories.map((String category) {
+                                    return DropdownMenuItem<String>(value: category, child: Text(category));
+                                  }).toList(),
+                                  onChanged: (String? newValue) {
+                                    setState(() {
+                                      selectedCategory = newValue!;
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              if (activeFilter == null)
+                                InkWell(
+                                  onTap: () => _showFavoritesDialog(events),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade100)),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Row(
+                                          children: [
+                                            Icon(Icons.favorite, color: Colors.red, size: 20),
+                                            SizedBox(width: 8),
+                                            Text('Favorites', style: TextStyle(color: Colors.grey)),
+                                          ],
+                                        ),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                              decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12)),
+                                              child: Text(favoriteEventIds.length.toString()),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(height: 16),
+                              filteredEvents.isEmpty
+                                  ? _buildEmptyState()
+                                  : ListView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: filteredEvents.length,
+                                itemBuilder: (context, index) {
+                                  return _buildEventCard(filteredEvents[index]);
+                                },
+                              ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Row(
-                          children: [
-                            Stack(
-                              children: [
-                                IconButton(onPressed: _showAlertsDialog, icon: const Icon(Icons.notifications), color: Colors.black),
-                                if (unreadAlertsCount > 0)
-                                  Positioned(
-                                    right: 8,
-                                    top: 8,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                                      child: Text(unreadAlertsCount.toString(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            IconButton(onPressed: _handleLogout, icon: const Icon(Icons.logout), color: Colors.red, tooltip: 'Logout'),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(child: _buildStatCard('Registered', registeredCount.toString(), Icons.calendar_today, Colors.blue)),
-                        const SizedBox(width: 12),
-                        Expanded(child: _buildStatCard('Upcoming', upcomingRegisteredCount.toString(), Icons.trending_up, Colors.green)),
-                        const SizedBox(width: 12),
-                        Expanded(child: _buildStatCard('Attended', completedAttendedCount.toString(), Icons.check_circle, Colors.purple)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Search events...',
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        searchQuery = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildFilterChip('All', null),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Upcoming', EventStatus.upcoming),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Completed', EventStatus.completed),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
-                    child: DropdownButton<String>(
-                      value: selectedCategory,
-                      isExpanded: true,
-                      underline: const SizedBox(),
-                      items: categories.map((String category) {
-                        return DropdownMenuItem<String>(value: category, child: Text(category));
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          selectedCategory = newValue!;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (activeFilter == null)
-                    InkWell(
-                      onTap: _showFavoritesDialog,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade100)),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(Icons.favorite, color: Colors.red, size: 20),
-                                SizedBox(width: 8),
-                                Text('Favorites', style: TextStyle(color: Colors.grey)),
-                              ],
-                            ),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                  decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12)),
-                                  child: Text(favoriteEventIds.length.toString()),
-                                ),
-                                const SizedBox(width: 8),
-                                const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
-                              ],
-                            ),
-                          ],
-                        ),
                       ),
-                    ),
-                  const SizedBox(height: 16),
-                  filteredEvents.isEmpty
-                      ? _buildEmptyState()
-                      : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: filteredEvents.length,
-                    itemBuilder: (context, index) {
-                      return _buildEventCard(filteredEvents[index]);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+                    ],
+                  );
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -723,12 +866,9 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               ],
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            Row(
               children: [
-                SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.5,
+                Expanded(
                   child: ElevatedButton(
                     onPressed: isRegistered
                         ? (event.status == EventStatus.upcoming ? () => _handleUnregister(event.id) : null)
@@ -744,72 +884,21 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                     ),
                   ),
                 ),
+                if (isRegistered && event.status == EventStatus.upcoming) ...[
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => _handleViewQR(event),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.all(12),
+                    ),
+                    child: const Icon(Icons.qr_code, size: 20),
+                  ),
+                ],
+                const SizedBox(width: 8),
                 IconButton(onPressed: () => _showEventOptions(event), icon: const Icon(Icons.more_vert, color: Colors.grey)),
               ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(48),
-        child: Column(
-          children: [
-            Icon(Icons.calendar_today, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('No events found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            SizedBox(height: 8),
-            Text('Try adjusting your search or filters', style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showEventOptions(AttendeeEvent event) {
-    final isFavorite = favoriteEventIds.contains(event.id);
-
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? Colors.red : null),
-              title: Text(isFavorite ? 'Remove from Favorites' : 'Add to Favorites'),
-              onTap: () {
-                Navigator.pop(context);
-                _handleToggleFavorite(event.id);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.calendar_month),
-              title: const Text('Add to Calendar'),
-              onTap: () {
-                Navigator.pop(context);
-                _showSnackBar('Event added to calendar');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.share),
-              title: const Text('Share Event'),
-              onTap: () {
-                Navigator.pop(context);
-                _showSnackBar('Event link copied to clipboard');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('View Details'),
-              onTap: () {
-                Navigator.pop(context);
-                _showSnackBar('View event details');
-              },
             ),
           ],
         ),
