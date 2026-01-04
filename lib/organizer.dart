@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'services/firebase_service.dart';
 
 enum EventStatus { upcoming, ongoing, completed }
@@ -68,7 +69,7 @@ class Event {
   }
 }
 
-enum DashboardView { list, create, edit, details }
+enum DashboardView { list, create, edit, details, attendees, scanner }
 
 class OrganizerDashboard extends StatefulWidget {
   const OrganizerDashboard({Key? key}) : super(key: key);
@@ -297,7 +298,11 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 });
               },
             ),
-            const Text('Back', style: TextStyle(color: Colors.black)),
+            Text(
+                currentView == DashboardView.scanner ? 'Scan QR Code' :
+                currentView == DashboardView.attendees ? 'Attendees' : 'Back',
+                style: const TextStyle(color: Colors.black)
+            ),
           ],
         )
             : Column(
@@ -314,6 +319,15 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         ),
         actions: currentView == DashboardView.list
             ? [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner, color: Colors.black),
+            onPressed: () {
+              setState(() {
+                currentView = DashboardView.scanner;
+              });
+            },
+            tooltip: 'Scan QR',
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.red),
             onPressed: _handleLogout,
@@ -365,6 +379,21 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           },
           onDelete: () => _deleteEvent(selectedEvent!.id),
           onSendAlert: () => _sendAlertToAttendees(selectedEvent!),
+          onViewAttendees: () {
+            setState(() {
+              currentView = DashboardView.attendees;
+            });
+          },
+        );
+      case DashboardView.attendees:
+        return AttendeesListView(event: selectedEvent!);
+      case DashboardView.scanner:
+        return QRScannerView(
+          onScanned: (result) {
+            setState(() {
+              currentView = DashboardView.list;
+            });
+          },
         );
     }
   }
@@ -393,7 +422,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                // Stats Cards (Real-time)
                 StreamBuilder<Map<String, int>>(
                   stream: FirebaseService.getOrganizerStatsStream(),
                   builder: (context, statsSnapshot) {
@@ -433,7 +461,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 ),
                 const SizedBox(height: 24),
 
-                // Search Bar
                 TextField(
                   decoration: InputDecoration(
                     hintText: 'Search events...',
@@ -453,7 +480,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 ),
                 const SizedBox(height: 16),
 
-                // Filter Tabs
                 Row(
                   children: [
                     _buildFilterChip('All', null),
@@ -465,7 +491,6 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 ),
                 const SizedBox(height: 16),
 
-                // Event List
                 filteredEvents.isEmpty
                     ? _buildEmptyState()
                     : ListView.builder(
@@ -527,7 +552,9 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   }
 
   Widget _buildEventCard(Event event) {
-    final attendancePercentage = (event.attendees / event.maxAttendees * 100).round();
+    final attendancePercentage = event.maxAttendees > 0
+        ? (event.attendees / event.maxAttendees * 100).round()
+        : 0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -668,6 +695,17 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.people),
+              title: const Text('View Attendees'),
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  selectedEvent = event;
+                  currentView = DashboardView.attendees;
+                });
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.edit),
               title: const Text('Edit'),
               onTap: () {
@@ -696,6 +734,552 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// QR Scanner View - WITH CAMERA SCANNING
+class QRScannerView extends StatefulWidget {
+  final Function(String) onScanned;
+
+  const QRScannerView({Key? key, required this.onScanned}) : super(key: key);
+
+  @override
+  State<QRScannerView> createState() => _QRScannerViewState();
+}
+
+class _QRScannerViewState extends State<QRScannerView> {
+  bool isProcessing = false;
+  bool showManualInput = false;
+  final TextEditingController _manualController = TextEditingController();
+
+  @override
+  void dispose() {
+    _manualController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleQRCode(String code) async {
+    if (isProcessing) return;
+
+    setState(() {
+      isProcessing = true;
+    });
+
+    try {
+      final result = await FirebaseService.verifyQRAndMarkAttendance(code);
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 32),
+                SizedBox(width: 12),
+                Text('Success!'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Student: ${result['studentName']}'),
+                Text('ID: ${result['studentId']}'),
+                const SizedBox(height: 8),
+                Text('Event: ${result['eventTitle']}'),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '✓ Attendance marked successfully',
+                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  widget.onScanned(code);
+                },
+                child: const Text('Done'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    isProcessing = false;
+                  });
+                },
+                child: const Text('Scan Next'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.error, color: Colors.red, size: 32),
+                SizedBox(width: 12),
+                Text('Error'),
+              ],
+            ),
+            content: Text(e.toString()),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    isProcessing = false;
+                  });
+                },
+                child: const Text('Try Again'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _verifyManual() async {
+    if (_manualController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter QR code')),
+      );
+      return;
+    }
+
+    await _handleQRCode(_manualController.text);
+    _manualController.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          if (!showManualInput)
+            MobileScanner(
+              onDetect: (capture) {
+                final List<Barcode> barcodes = capture.barcodes;
+                for (final barcode in barcodes) {
+                  if (barcode.rawValue != null) {
+                    _handleQRCode(barcode.rawValue!);
+                    break;
+                  }
+                }
+              },
+            )
+          else
+            _buildManualInputView(),
+
+          // Overlay with scanning frame
+          if (!showManualInput) _buildScanningOverlay(),
+
+          // Manual input toggle button
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: ElevatedButton.icon(
+                icon: Icon(showManualInput ? Icons.qr_code_scanner : Icons.keyboard),
+                label: Text(showManualInput ? 'Use Camera' : 'Enter Manually'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                ),
+                onPressed: () {
+                  setState(() {
+                    showManualInput = !showManualInput;
+                  });
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScanningOverlay() {
+    return Column(
+      children: [
+        Expanded(
+          flex: 1,
+          child: Container(color: Colors.black.withOpacity(0.5)),
+        ),
+        Expanded(
+          flex: 2,
+          child: Row(
+            children: [
+              Expanded(child: Container(color: Colors.black.withOpacity(0.5))),
+              Expanded(
+                flex: 3,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white, width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Stack(
+                    children: [
+                      // Corner brackets
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              top: BorderSide(color: Colors.green, width: 4),
+                              left: BorderSide(color: Colors.green, width: 4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              top: BorderSide(color: Colors.green, width: 4),
+                              right: BorderSide(color: Colors.green, width: 4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(color: Colors.green, width: 4),
+                              left: BorderSide(color: Colors.green, width: 4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(color: Colors.green, width: 4),
+                              right: BorderSide(color: Colors.green, width: 4),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(child: Container(color: Colors.black.withOpacity(0.5))),
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 1,
+          child: Container(
+            color: Colors.black.withOpacity(0.5),
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Position QR code within frame',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'QR codes are valid for 5 minutes only',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildManualInputView() {
+    return Container(
+      color: Colors.grey[50],
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.qr_code,
+                  size: 100,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                'Verify Attendee',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Enter the QR code from attendee\'s device',
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _manualController,
+                        enabled: !isProcessing,
+                        decoration: const InputDecoration(
+                          labelText: 'QR Code',
+                          hintText: 'Paste or type QR code here',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.qr_code),
+                        ),
+                        maxLines: 3,
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: isProcessing ? null : _verifyManual,
+                          icon: isProcessing
+                              ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                              : const Icon(Icons.verified_user),
+                          label: Text(isProcessing ? 'Verifying...' : 'Verify Attendance'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Attendees List View
+class AttendeesListView extends StatelessWidget {
+  final Event event;
+
+  const AttendeesListView({Key? key, required this.event}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: FirebaseService.getEventAttendeesStream(event.id),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final attendees = snapshot.data ?? [];
+
+        if (attendees.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.people_outline, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text('No attendees yet', style: TextStyle(fontSize: 18, color: Colors.grey)),
+              ],
+            ),
+          );
+        }
+
+        final attendedCount = attendees.where((a) => a['attended'] == true).length;
+
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              color: Colors.white,
+              child: Column(
+                children: [
+                  Text(
+                    event.title,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Registered',
+                          attendees.length.toString(),
+                          Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Attended',
+                          attendedCount.toString(),
+                          Colors.green,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildInfoCard(
+                          'Pending',
+                          (attendees.length - attendedCount).toString(),
+                          Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: attendees.length,
+                itemBuilder: (context, index) {
+                  final attendee = attendees[index];
+                  final isAttended = attendee['attended'] == true;
+
+                  return Card(
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: isAttended ? Colors.green : Colors.grey,
+                        child: Text(
+                          attendee['name'].toString().substring(0, 1).toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      title: Text(
+                        attendee['name'],
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text('ID: ${attendee['studentId']}'),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isAttended ? Colors.green.shade100 : Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          isAttended ? 'Attended' : 'Pending',
+                          style: TextStyle(
+                            color: isAttended ? Colors.green.shade900 : Colors.orange.shade900,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoCard(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -897,6 +1481,7 @@ class EventDetailsWidget extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onSendAlert;
+  final VoidCallback onViewAttendees;
 
   const EventDetailsWidget({
     Key? key,
@@ -904,11 +1489,14 @@ class EventDetailsWidget extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onSendAlert,
+    required this.onViewAttendees,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final attendancePercentage = (event.attendees / event.maxAttendees * 100).round();
+    final attendancePercentage = event.maxAttendees > 0
+        ? (event.attendees / event.maxAttendees * 100).round()
+        : 0;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -949,6 +1537,18 @@ class EventDetailsWidget extends StatelessWidget {
             valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
           ),
           const SizedBox(height: 32),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.people),
+            label: const Text('View Attendees'),
+            onPressed: onViewAttendees,
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Colors.purple,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 0),
+            ),
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -974,25 +1574,26 @@ class EventDetailsWidget extends StatelessWidget {
                 onPressed: () {
                   showDialog(
                     context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Delete Event'),
-                      content: const Text(
-                          'Are you sure you want to delete this event?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Cancel'),
+                    builder: (context) =>
+                        AlertDialog(
+                          title: const Text('Delete Event'),
+                          content: const Text(
+                              'Are you sure you want to delete this event?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                onDelete();
+                              },
+                              child: const Text('Delete',
+                                  style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
                         ),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            onDelete();
-                          },
-                          child: const Text('Delete',
-                              style: TextStyle(color: Colors.red)),
-                        ),
-                      ],
-                    ),
                   );
                 },
                 style: ElevatedButton.styleFrom(

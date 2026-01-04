@@ -5,7 +5,6 @@ import 'firebase_options.dart';
 import 'login.dart';
 import 'organizer.dart';
 import 'attendee.dart';
-import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
