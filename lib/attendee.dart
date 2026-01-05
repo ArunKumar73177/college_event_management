@@ -77,6 +77,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   Set<String> registeredEventIds = {};
   Set<String> favoriteEventIds = {};
   Map<String, bool> attendanceStatus = {}; // Track attendance per event
+  Set<String> shownAttendancePopups = {}; // Track which popups have been shown
   String searchQuery = '';
   String selectedCategory = 'All Categories';
   EventStatus? activeFilter;
@@ -93,7 +94,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   void initState() {
     super.initState();
     _loadUserData();
-    _listenToAttendanceChanges();
   }
 
   Future<void> _loadUserData() async {
@@ -102,6 +102,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       setState(() {
         studentId = user['studentId'];
       });
+      // Start listening to attendance changes after studentId is loaded
+      _listenToAttendanceChanges();
     } else {
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/login');
@@ -109,12 +111,9 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     }
   }
 
-  // NEW: Listen to real-time attendance changes
-  void _listenToAttendanceChanges() async {
-    final user = await FirebaseService.getCurrentUser();
-    if (user == null) return;
-
-    final studentId = user['studentId'];
+  // FIXED: Listen to real-time attendance changes with proper popup control
+  void _listenToAttendanceChanges() {
+    if (studentId == null) return;
 
     FirebaseFirestore.instance
         .collectionGroup('registrations')
@@ -126,16 +125,20 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
             change.type == DocumentChangeType.added) {
           final data = change.doc.data();
           if (data != null) {
-            final wasAttended = attendanceStatus[change.doc.reference.parent.parent!.id] ?? false;
+            final eventId = change.doc.reference.parent.parent!.id;
+            final wasAttended = attendanceStatus[eventId] ?? false;
             final isNowAttended = data['attended'] == true;
 
-            // Show popup when attendance is newly marked
-            if (!wasAttended && isNowAttended) {
-              _showAttendanceConfirmation(change.doc.reference.parent.parent!.id);
+            // Show popup only if:
+            // 1. Attendance changed from false to true
+            // 2. Popup hasn't been shown for this event yet
+            if (!wasAttended && isNowAttended && !shownAttendancePopups.contains(eventId)) {
+              shownAttendancePopups.add(eventId); // Mark as shown
+              _showAttendanceConfirmation(eventId);
             }
 
             setState(() {
-              attendanceStatus[change.doc.reference.parent.parent!.id] = isNowAttended;
+              attendanceStatus[eventId] = isNowAttended;
             });
           }
         }
@@ -143,75 +146,86 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     });
   }
 
-  // NEW: Show attendance confirmation popup
+  // Show attendance confirmation popup
   void _showAttendanceConfirmation(String eventId) {
     if (!mounted) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.green.shade100,
-                shape: BoxShape.circle,
+    // Get event details for the popup
+    FirebaseFirestore.instance
+        .collection('events')
+        .doc(eventId)
+        .get()
+        .then((eventDoc) {
+      if (!eventDoc.exists || !mounted) return;
+
+      final eventTitle = eventDoc.data()?['title'] ?? 'Event';
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle, color: Colors.green, size: 32),
               ),
-              child: const Icon(Icons.check_circle, color: Colors.green, size: 32),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text('Attendance Registered!', style: TextStyle(fontSize: 18)),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.shade200),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text('Attendance Registered!', style: TextStyle(fontSize: 18)),
               ),
-              child: const Row(
-                children: [
-                  Icon(Icons.verified, color: Colors.green, size: 24),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Your attendance has been successfully marked for this event!',
-                      style: TextStyle(fontSize: 15),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'You can now view your updated attendance record in your dashboard.',
-              style: TextStyle(color: Colors.grey, fontSize: 14),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            child: const Text('Great!'),
+            ],
           ),
-        ],
-      ),
-    );
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.verified, color: Colors.green, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Your attendance has been successfully marked for "$eventTitle"!',
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'You can now view your updated attendance record in your dashboard.',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              child: const Text('Great!'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   Future<void> _handleRegister(String eventId) async {
@@ -504,9 +518,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
-  // UPDATED: Show only favorite events that exist
+  // FIXED: Show only favorite events that exist
   void _showFavoritesDialog(List<AttendeeEvent> allEvents) {
-    // Filter to only show events that are both favorited AND exist in the event list
     final favoriteEvents = allEvents.where((e) => favoriteEventIds.contains(e.id)).toList();
 
     showDialog(
@@ -610,8 +623,24 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   List<AttendeeEvent> _filterEvents(List<AttendeeEvent> events) {
     var filtered = events;
 
+    // FIXED: Filter based on attendance status for registered events
     if (activeFilter != null) {
-      filtered = filtered.where((e) => e.status == activeFilter).toList();
+      filtered = filtered.where((e) {
+        // If showing completed, show events where user has attended
+        if (activeFilter == EventStatus.completed) {
+          return registeredEventIds.contains(e.id) &&
+              attendanceStatus[e.id] == true;
+        }
+        // If showing upcoming, show events that are upcoming OR
+        // registered events where attendance is not yet marked
+        else if (activeFilter == EventStatus.upcoming) {
+          if (registeredEventIds.contains(e.id)) {
+            return attendanceStatus[e.id] != true;
+          }
+          return e.status == EventStatus.upcoming;
+        }
+        return e.status == activeFilter;
+      }).toList();
     }
 
     if (selectedCategory != 'All Categories') {
@@ -629,7 +658,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     return filtered;
   }
 
-  // UPDATED: Calculate attended count properly
+  // FIXED: Calculate attended count properly
   Future<int> _getAttendedCount() async {
     if (studentId == null) return 0;
 
@@ -680,8 +709,12 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                   }
 
                   final filteredEvents = _filterEvents(events);
-                  final registeredCount = registeredEventIds.length;
-                  final upcomingRegisteredCount = events.where((e) => e.status == EventStatus.upcoming && registeredEventIds.contains(e.id)).length;
+
+                  // FIXED: Calculate upcoming count based on attendance status
+                  final upcomingRegisteredCount = events.where((e) =>
+                  registeredEventIds.contains(e.id) &&
+                      attendanceStatus[e.id] != true
+                  ).length;
 
                   return CustomScrollView(
                     slivers: [
@@ -754,7 +787,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                                   ],
                                 ),
                                 const SizedBox(height: 20),
-                                // UPDATED: Stats with real-time attendance count
+                                // Stats with real-time attendance count
                                 FutureBuilder<int>(
                                   future: _getAttendedCount(),
                                   builder: (context, attendedSnapshot) {
@@ -762,7 +795,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
 
                                     return Row(
                                       children: [
-                                        Expanded(child: _buildStatCard('Registered', registeredCount.toString(), Icons.calendar_today, Colors.blue)),
+                                        Expanded(child: _buildStatCard('Registered', registeredEventIds.length.toString(), Icons.calendar_today, Colors.blue)),
                                         const SizedBox(width: 12),
                                         Expanded(child: _buildStatCard('Upcoming', upcomingRegisteredCount.toString(), Icons.trending_up, Colors.green)),
                                         const SizedBox(width: 12),
@@ -923,7 +956,14 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   Widget _buildEventCard(AttendeeEvent event) {
     final isRegistered = registeredEventIds.contains(event.id);
     final isFavorite = favoriteEventIds.contains(event.id);
+    final hasAttended = attendanceStatus[event.id] == true;
     final registrationPercentage = (event.registered / event.capacity * 100).round();
+
+    // FIXED: Show event as completed if user has attended
+    final displayStatus = (isRegistered && hasAttended) ? 'Completed' :
+    (event.status == EventStatus.upcoming ? 'Upcoming' : 'Completed');
+    final statusColor = (isRegistered && hasAttended) || event.status == EventStatus.completed
+        ? Colors.grey : Colors.black;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -948,8 +988,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(color: event.status == EventStatus.upcoming ? Colors.black : Colors.grey, borderRadius: BorderRadius.circular(12)),
-                  child: Text(event.status == EventStatus.upcoming ? 'Upcoming' : 'Completed', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                  decoration: BoxDecoration(color: statusColor, borderRadius: BorderRadius.circular(12)),
+                  child: Text(displayStatus, style: const TextStyle(color: Colors.white, fontSize: 12)),
                 ),
               ],
             ),
@@ -979,6 +1019,31 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 Text('${event.registered} / ${event.capacity}', style: const TextStyle(color: Colors.grey, fontSize: 14)),
               ],
             ),
+            // FIXED: Show attendance status for registered events
+            if (isRegistered && hasAttended) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  children: const [
+                    Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Attendance Marked',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -999,21 +1064,26 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: isRegistered
+                    onPressed: hasAttended ? null : (isRegistered
                         ? (event.status == EventStatus.upcoming ? () => _handleUnregister(event.id) : null)
-                        : (event.status == EventStatus.upcoming && event.registered < event.capacity ? () => _handleRegister(event.id) : null),
-                    style: ElevatedButton.styleFrom(backgroundColor: isRegistered ? Colors.green : Colors.black, foregroundColor: Colors.white),
+                        : (event.status == EventStatus.upcoming && event.registered < event.capacity ? () => _handleRegister(event.id) : null)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: hasAttended ? Colors.green : (isRegistered ? Colors.green : Colors.black),
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: Colors.green.shade300,
+                      disabledForegroundColor: Colors.white,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(isRegistered ? Icons.check_circle : Icons.person_add, size: 18),
+                        Icon(hasAttended ? Icons.verified : (isRegistered ? Icons.check_circle : Icons.person_add), size: 18),
                         const SizedBox(width: 8),
-                        Text(isRegistered ? 'Registered' : 'Register'),
+                        Text(hasAttended ? 'Attended' : (isRegistered ? 'Registered' : 'Register')),
                       ],
                     ),
                   ),
                 ),
-                if (isRegistered && event.status == EventStatus.upcoming) ...[
+                if (isRegistered && !hasAttended && event.status == EventStatus.upcoming) ...[
                   const SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: () => _handleViewQR(event),
