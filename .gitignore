@@ -47,3 +47,10 @@ app.*.map.json
 android/**/build/
 android/app/google-services.json
 lib/firebase_options.dart
+# Firebase local CLI files
+.firebase/
+.firebaserc
+firebase.json
+
+# Android build & generated
+android/**/build/

@@ -76,6 +76,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   String? studentId;
   Set<String> registeredEventIds = {};
   Set<String> favoriteEventIds = {};
+  Map<String, bool> attendanceStatus = {}; // Track attendance per event
   String searchQuery = '';
   String selectedCategory = 'All Categories';
   EventStatus? activeFilter;
@@ -92,6 +93,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   void initState() {
     super.initState();
     _loadUserData();
+    _listenToAttendanceChanges();
   }
 
   Future<void> _loadUserData() async {
@@ -105,6 +107,111 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
         Navigator.pushReplacementNamed(context, '/login');
       }
     }
+  }
+
+  // NEW: Listen to real-time attendance changes
+  void _listenToAttendanceChanges() async {
+    final user = await FirebaseService.getCurrentUser();
+    if (user == null) return;
+
+    final studentId = user['studentId'];
+
+    FirebaseFirestore.instance
+        .collectionGroup('registrations')
+        .where('studentId', isEqualTo: studentId)
+        .snapshots()
+        .listen((snapshot) {
+      for (var change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.modified ||
+            change.type == DocumentChangeType.added) {
+          final data = change.doc.data();
+          if (data != null) {
+            final wasAttended = attendanceStatus[change.doc.reference.parent.parent!.id] ?? false;
+            final isNowAttended = data['attended'] == true;
+
+            // Show popup when attendance is newly marked
+            if (!wasAttended && isNowAttended) {
+              _showAttendanceConfirmation(change.doc.reference.parent.parent!.id);
+            }
+
+            setState(() {
+              attendanceStatus[change.doc.reference.parent.parent!.id] = isNowAttended;
+            });
+          }
+        }
+      }
+    });
+  }
+
+  // NEW: Show attendance confirmation popup
+  void _showAttendanceConfirmation(String eventId) {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle, color: Colors.green, size: 32),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('Attendance Registered!', style: TextStyle(fontSize: 18)),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.verified, color: Colors.green, size: 24),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Your attendance has been successfully marked for this event!',
+                      style: TextStyle(fontSize: 15),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'You can now view your updated attendance record in your dashboard.',
+              style: TextStyle(color: Colors.grey, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: const Text('Great!'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleRegister(String eventId) async {
@@ -354,7 +461,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
 
                     final alerts = snapshot.data!;
 
-                    // Mark all as read when dialog opens
                     Future.delayed(Duration.zero, () {
                       FirebaseService.markAllAlertsAsRead(studentId!);
                     });
@@ -398,7 +504,11 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
+  // UPDATED: Show only favorite events that exist
   void _showFavoritesDialog(List<AttendeeEvent> allEvents) {
+    // Filter to only show events that are both favorited AND exist in the event list
+    final favoriteEvents = allEvents.where((e) => favoriteEventIds.contains(e.id)).toList();
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -420,7 +530,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               ),
               const Divider(height: 1),
               Flexible(
-                child: favoriteEventIds.isEmpty
+                child: favoriteEvents.isEmpty
                     ? const Padding(
                   padding: EdgeInsets.all(32),
                   child: Column(
@@ -436,11 +546,10 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 )
                     : ListView.separated(
                   shrinkWrap: true,
-                  itemCount: favoriteEventIds.length,
+                  itemCount: favoriteEvents.length,
                   separatorBuilder: (context, index) => const Divider(height: 1),
                   itemBuilder: (context, index) {
-                    final eventId = favoriteEventIds.elementAt(index);
-                    final event = allEvents.firstWhere((e) => e.id == eventId, orElse: () => allEvents.first);
+                    final event = favoriteEvents[index];
 
                     return ListTile(
                       leading: Container(
@@ -462,7 +571,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                       trailing: IconButton(
                         icon: const Icon(Icons.close, color: Colors.grey),
                         onPressed: () {
-                          _handleToggleFavorite(eventId);
+                          _handleToggleFavorite(event.id);
                           Navigator.pop(context);
                         },
                       ),
@@ -520,6 +629,19 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     return filtered;
   }
 
+  // UPDATED: Calculate attended count properly
+  Future<int> _getAttendedCount() async {
+    if (studentId == null) return 0;
+
+    int count = 0;
+    for (var eventId in registeredEventIds) {
+      if (attendanceStatus[eventId] == true) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (studentId == null) {
@@ -560,7 +682,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                   final filteredEvents = _filterEvents(events);
                   final registeredCount = registeredEventIds.length;
                   final upcomingRegisteredCount = events.where((e) => e.status == EventStatus.upcoming && registeredEventIds.contains(e.id)).length;
-                  final completedAttendedCount = events.where((e) => e.status == EventStatus.completed && registeredEventIds.contains(e.id)).length;
 
                   return CustomScrollView(
                     slivers: [
@@ -633,14 +754,22 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                                   ],
                                 ),
                                 const SizedBox(height: 20),
-                                Row(
-                                  children: [
-                                    Expanded(child: _buildStatCard('Registered', registeredCount.toString(), Icons.calendar_today, Colors.blue)),
-                                    const SizedBox(width: 12),
-                                    Expanded(child: _buildStatCard('Upcoming', upcomingRegisteredCount.toString(), Icons.trending_up, Colors.green)),
-                                    const SizedBox(width: 12),
-                                    Expanded(child: _buildStatCard('Attended', completedAttendedCount.toString(), Icons.check_circle, Colors.purple)),
-                                  ],
+                                // UPDATED: Stats with real-time attendance count
+                                FutureBuilder<int>(
+                                  future: _getAttendedCount(),
+                                  builder: (context, attendedSnapshot) {
+                                    final attendedCount = attendedSnapshot.data ?? 0;
+
+                                    return Row(
+                                      children: [
+                                        Expanded(child: _buildStatCard('Registered', registeredCount.toString(), Icons.calendar_today, Colors.blue)),
+                                        const SizedBox(width: 12),
+                                        Expanded(child: _buildStatCard('Upcoming', upcomingRegisteredCount.toString(), Icons.trending_up, Colors.green)),
+                                        const SizedBox(width: 12),
+                                        Expanded(child: _buildStatCard('Attended', attendedCount.toString(), Icons.check_circle, Colors.purple)),
+                                      ],
+                                    );
+                                  },
                                 ),
                               ],
                             ),
