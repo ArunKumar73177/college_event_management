@@ -58,13 +58,21 @@ Secure Firebase cloud database
 Paperless & automated event workflow
 
 🔐 Demo Login Credentials
+
 Organizer
+
 User ID	Password
+
 2024001	Abc123
+
 Attendees
+
 User ID	Password
+
 2024002	Ash123
+
 2024123	Xyz987
+
 📱 How It Works
 
 Organizer logs in and creates events
