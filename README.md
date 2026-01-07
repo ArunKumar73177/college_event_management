@@ -21,7 +21,7 @@ Arun Kumar
 Name:	               	                   
 👥 Priyanshi Srivastava  
 
-Role
+Role:
 👨‍💻 Developer	       
 
 Email 📧:
