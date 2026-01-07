@@ -17,8 +17,15 @@ Arun Kumar
 📧 Email: arunsharma73177@gmail.com
 
 👥 Team Members
-        Name	               Role	                      Email
-Priyanshi Srivastava      	Developer	       srivastavapriyanshi8081@gmail.com
+Name	               	                   
+Priyanshi Srivastava  
+
+Role
+Developer	       
+
+Email
+srivastavapriyanshi8081@gmail.com
+
 🛠️ Technologies Used
 
 Flutter
