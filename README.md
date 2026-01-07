@@ -17,13 +17,14 @@ Arun Kumar
 📧 Email: arunsharma73177@gmail.com
 
 👥 Team Members
-Name	               	                   
-Priyanshi Srivastava  
+
+Name:	               	                   
+👥 Priyanshi Srivastava  
 
 Role
-Developer	       
+👨‍💻 Developer	       
 
-Email
+Email 📧:
 srivastavapriyanshi8081@gmail.com
 
 🛠️ Technologies Used
