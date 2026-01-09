@@ -19,8 +19,10 @@ class AttendeeEvent {
   final String id;
   final String title;
   final String description;
-  final String date;
-  final String time;
+  final String startDate;
+  final String startTime;
+  final String endDate;
+  final String endTime;
   final String location;
   final String category;
   final int capacity;
@@ -31,8 +33,10 @@ class AttendeeEvent {
     required this.id,
     required this.title,
     required this.description,
-    required this.date,
-    required this.time,
+    required this.startDate,
+    required this.startTime,
+    required this.endDate,
+    required this.endTime,
     required this.location,
     required this.category,
     required this.capacity,
@@ -41,9 +45,13 @@ class AttendeeEvent {
   });
 
   factory AttendeeEvent.fromFirestore(Map<String, dynamic> data) {
-    DateTime dateTime = data['date'] is DateTime
-        ? data['date']
-        : (data['date'] as Timestamp).toDate();
+    DateTime startDateTime = data['startDate'] is DateTime
+        ? data['startDate']
+        : (data['startDate'] as Timestamp).toDate();
+
+    DateTime endDateTime = data['endDate'] is DateTime
+        ? data['endDate']
+        : (data['endDate'] as Timestamp).toDate();
 
     EventStatus status;
     switch (data['status']) {
@@ -61,8 +69,10 @@ class AttendeeEvent {
       id: data['id'],
       title: data['title'] ?? '',
       description: data['description'] ?? '',
-      date: DateFormat('MMM dd, yyyy').format(dateTime),
-      time: data['time'] ?? '',
+      startDate: DateFormat('MMM dd, yyyy').format(startDateTime),
+      startTime: data['startTime'] ?? '',
+      endDate: DateFormat('MMM dd, yyyy').format(endDateTime),
+      endTime: data['endTime'] ?? '',
       location: data['location'] ?? '',
       category: data['category'] ?? '',
       capacity: data['capacity'] ?? 0,
@@ -76,8 +86,8 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   String? studentId;
   Set<String> registeredEventIds = {};
   Set<String> favoriteEventIds = {};
-  Map<String, bool> attendanceStatus = {}; // Track attendance per event
-  Set<String> shownAttendancePopups = {}; // Track which popups have been shown
+  Map<String, bool> attendanceStatus = {};
+  Map<String, bool> previousAttendanceStatus = {};
   String searchQuery = '';
   String selectedCategory = 'All Categories';
   EventStatus? activeFilter;
@@ -102,7 +112,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       setState(() {
         studentId = user['studentId'];
       });
-      // Start listening to attendance changes after studentId is loaded
       _listenToAttendanceChanges();
     } else {
       if (mounted) {
@@ -111,11 +120,9 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     }
   }
 
-  // FIXED: Listen to real-time attendance changes with proper popup control
   void _listenToAttendanceChanges() {
     if (studentId == null) return;
 
-    // Listen to ALL events to track registrations and attendance
     FirebaseFirestore.instance
         .collection('events')
         .snapshots()
@@ -123,7 +130,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
       for (var eventDoc in eventsSnapshot.docs) {
         final eventId = eventDoc.id;
 
-        // Listen to this specific student's registration in each event
         eventDoc.reference
             .collection('registrations')
             .doc(studentId)
@@ -132,23 +138,20 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
           if (regDoc.exists) {
             final data = regDoc.data();
             if (data != null) {
-              final wasAttended = attendanceStatus[eventId] ?? false;
+              final wasAttended = previousAttendanceStatus[eventId] ?? false;
               final isNowAttended = data['attended'] == true;
 
-              // Show popup only if:
-              // 1. Attendance changed from false to true
-              // 2. Popup hasn't been shown for this event yet
-              // 3. Widget is still mounted
-              if (!wasAttended && isNowAttended &&
-                  !shownAttendancePopups.contains(eventId) &&
+              if (previousAttendanceStatus.containsKey(eventId) &&
+                  !wasAttended &&
+                  isNowAttended &&
                   mounted) {
-                shownAttendancePopups.add(eventId);
                 _showAttendanceConfirmation(eventId, eventDoc.data()?['title'] ?? 'Event');
               }
 
               if (mounted) {
                 setState(() {
                   attendanceStatus[eventId] = isNowAttended;
+                  previousAttendanceStatus[eventId] = isNowAttended;
                 });
               }
             }
@@ -158,7 +161,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     });
   }
 
-  // Show attendance confirmation popup
   void _showAttendanceConfirmation(String eventId, String eventTitle) {
     if (!mounted) return;
 
@@ -364,7 +366,9 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 const SizedBox(height: 16),
                 Text(event.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                 const SizedBox(height: 8),
-                Text('${event.date} at ${event.time}', style: const TextStyle(color: Colors.grey)),
+                Text('Start: ${event.startDate} at ${event.startTime}', style: const TextStyle(color: Colors.grey)),
+                const SizedBox(height: 4),
+                Text('End: ${event.endDate} at ${event.endTime}', style: const TextStyle(color: Colors.grey)),
                 const SizedBox(height: 8),
                 const Text('Valid for 5 minutes', style: TextStyle(color: Colors.red, fontSize: 12)),
                 const SizedBox(height: 16),
@@ -519,7 +523,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     );
   }
 
-  // FIXED: Show only favorite events that exist
   void _showFavoritesDialog(List<AttendeeEvent> allEvents) {
     final favoriteEvents = allEvents.where((e) => favoriteEventIds.contains(e.id)).toList();
 
@@ -576,7 +579,7 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const SizedBox(height: 4),
-                          Text('${event.date} at ${event.time}'),
+                          Text('${event.startDate} at ${event.startTime}'),
                           const SizedBox(height: 2),
                           Text(event.location, style: const TextStyle(fontSize: 12)),
                         ],
@@ -624,17 +627,12 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
   List<AttendeeEvent> _filterEvents(List<AttendeeEvent> events) {
     var filtered = events;
 
-    // Filter based on attendance status for registered events
     if (activeFilter != null) {
       filtered = filtered.where((e) {
-        // If showing completed, show events where user has attended
         if (activeFilter == EventStatus.completed) {
           return registeredEventIds.contains(e.id) &&
               attendanceStatus[e.id] == true;
-        }
-        // If showing upcoming, show events that are upcoming OR
-        // registered events where attendance is not yet marked
-        else if (activeFilter == EventStatus.upcoming) {
+        } else if (activeFilter == EventStatus.upcoming) {
           if (registeredEventIds.contains(e.id)) {
             return attendanceStatus[e.id] != true;
           }
@@ -659,7 +657,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     return filtered;
   }
 
-  // Calculate attended count properly
   Future<int> _getAttendedCount() async {
     if (studentId == null) return 0;
 
@@ -711,13 +708,11 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
 
                   final filteredEvents = _filterEvents(events);
 
-                  // Calculate upcoming count based on attendance status
                   final upcomingRegisteredCount = events.where((e) =>
                   registeredEventIds.contains(e.id) &&
                       attendanceStatus[e.id] != true
                   ).length;
 
-                  // FIXED: Calculate actual favorite count based on events that exist
                   final actualFavoriteCount = events.where((e) => favoriteEventIds.contains(e.id)).length;
 
                   return CustomScrollView(
@@ -791,7 +786,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                                   ],
                                 ),
                                 const SizedBox(height: 20),
-                                // Stats with real-time attendance count
                                 FutureBuilder<int>(
                                   future: _getAttendedCount(),
                                   builder: (context, attendedSnapshot) {
@@ -963,7 +957,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
     final hasAttended = attendanceStatus[event.id] == true;
     final registrationPercentage = (event.registered / event.capacity * 100).round();
 
-    // Show event as completed if user has attended
     final displayStatus = (isRegistered && hasAttended) ? 'Completed' :
     (event.status == EventStatus.upcoming ? 'Upcoming' : 'Completed');
     final statusColor = (isRegistered && hasAttended) || event.status == EventStatus.completed
@@ -1004,7 +997,15 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
               children: [
                 const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
                 const SizedBox(width: 8),
-                Expanded(child: Text('${event.date} at ${event.time}', style: const TextStyle(color: Colors.grey, fontSize: 14), overflow: TextOverflow.ellipsis)),
+                Expanded(child: Text('Start: ${event.startDate} at ${event.startTime}', style: const TextStyle(color: Colors.grey, fontSize: 14), overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.event, size: 16, color: Colors.grey),
+                const SizedBox(width: 8),
+                Expanded(child: Text('End: ${event.endDate} at ${event.endTime}', style: const TextStyle(color: Colors.grey, fontSize: 14), overflow: TextOverflow.ellipsis)),
               ],
             ),
             const SizedBox(height: 8),
@@ -1023,7 +1024,6 @@ class _AttendeeDashboardState extends State<AttendeeDashboard> {
                 Text('${event.registered} / ${event.capacity}', style: const TextStyle(color: Colors.grey, fontSize: 14)),
               ],
             ),
-            // Show attendance status for registered events
             if (isRegistered && hasAttended) ...[
               const SizedBox(height: 12),
               Container(
