@@ -1469,15 +1469,18 @@ class _EventFormWidgetState extends State<EventFormWidget> {
             const SizedBox(height: 16),
             InkWell(
               onTap: () async {
-                final date = await showDatePicker(
+                final picked = await showDatePicker(
                   context: context,
-                  initialDate: _selectedEndDate,
+                  initialDate: _selectedEndDate.isBefore(_selectedStartDate)
+                      ? _selectedStartDate
+                      : _selectedEndDate,
                   firstDate: _selectedStartDate,
                   lastDate: DateTime(2030),
                 );
-                if (date != null) {
+
+                if (picked != null) {
                   setState(() {
-                    _selectedEndDate = date;
+                    _selectedEndDate = picked;
                   });
                 }
               },
@@ -1493,6 +1496,7 @@ class _EventFormWidgetState extends State<EventFormWidget> {
                 ),
               ),
             ),
+
             const SizedBox(height: 16),
             InkWell(
               onTap: () async {
