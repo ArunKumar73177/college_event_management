@@ -66,11 +66,14 @@ class FirebaseService {
   // ==================== EVENTS CRUD (REAL-TIME) ====================
 
   /// Create new event (Organizer only) - Returns eventId
+  /// NOW INCLUDES startDate, startTime, endDate, endTime
   static Future<String> createEvent({
     required String title,
     required String description,
-    required DateTime date,
-    required String time,
+    required DateTime startDate,
+    required String startTime,
+    required DateTime endDate,
+    required String endTime,
     required String location,
     required String category,
     required int capacity,
@@ -79,8 +82,10 @@ class FirebaseService {
       final docRef = await _firestore.collection('events').add({
         'title': title,
         'description': description,
-        'date': Timestamp.fromDate(date),
-        'time': time,
+        'startDate': Timestamp.fromDate(startDate),
+        'startTime': startTime,
+        'endDate': Timestamp.fromDate(endDate),
+        'endTime': endTime,
         'location': location,
         'category': category,
         'capacity': capacity,
@@ -102,8 +107,11 @@ class FirebaseService {
       ) async {
     try {
       // Convert DateTime to Timestamp if present
-      if (updates.containsKey('date') && updates['date'] is DateTime) {
-        updates['date'] = Timestamp.fromDate(updates['date']);
+      if (updates.containsKey('startDate') && updates['startDate'] is DateTime) {
+        updates['startDate'] = Timestamp.fromDate(updates['startDate']);
+      }
+      if (updates.containsKey('endDate') && updates['endDate'] is DateTime) {
+        updates['endDate'] = Timestamp.fromDate(updates['endDate']);
       }
 
       await _firestore.collection('events').doc(eventId).update(updates);
@@ -141,16 +149,19 @@ class FirebaseService {
   static Stream<List<Map<String, dynamic>>> getAllEventsStream() {
     return _firestore
         .collection('events')
-        .orderBy('date', descending: false)
+        .orderBy('startDate', descending: false)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
         data['id'] = doc.id;
 
-        // Convert Timestamp to DateTime
-        if (data['date'] is Timestamp) {
-          data['date'] = (data['date'] as Timestamp).toDate();
+        // Convert Timestamps to DateTime
+        if (data['startDate'] is Timestamp) {
+          data['startDate'] = (data['startDate'] as Timestamp).toDate();
+        }
+        if (data['endDate'] is Timestamp) {
+          data['endDate'] = (data['endDate'] as Timestamp).toDate();
         }
 
         return data;
@@ -163,15 +174,18 @@ class FirebaseService {
     return _firestore
         .collection('events')
         .where('status', whereIn: ['upcoming', 'ongoing'])
-        .orderBy('date', descending: false)
+        .orderBy('startDate', descending: false)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
         data['id'] = doc.id;
 
-        if (data['date'] is Timestamp) {
-          data['date'] = (data['date'] as Timestamp).toDate();
+        if (data['startDate'] is Timestamp) {
+          data['startDate'] = (data['startDate'] as Timestamp).toDate();
+        }
+        if (data['endDate'] is Timestamp) {
+          data['endDate'] = (data['endDate'] as Timestamp).toDate();
         }
 
         return data;
