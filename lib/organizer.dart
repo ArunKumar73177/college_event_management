@@ -9,8 +9,10 @@ enum EventStatus { upcoming, ongoing, completed }
 class Event {
   final String id;
   final String title;
-  final DateTime date;
-  final TimeOfDay time;
+  final DateTime startDate;
+  final TimeOfDay startTime;
+  final DateTime endDate;
+  final TimeOfDay endTime;
   final String location;
   final String description;
   final String category;
@@ -21,8 +23,10 @@ class Event {
   Event({
     required this.id,
     required this.title,
-    required this.date,
-    required this.time,
+    required this.startDate,
+    required this.startTime,
+    required this.endDate,
+    required this.endTime,
     required this.location,
     required this.description,
     required this.category,
@@ -32,14 +36,24 @@ class Event {
   });
 
   factory Event.fromFirestore(Map<String, dynamic> data) {
-    DateTime date = data['date'] is DateTime
-        ? data['date']
-        : (data['date'] as Timestamp).toDate();
+    DateTime startDate = data['startDate'] is DateTime
+        ? data['startDate']
+        : (data['startDate'] as Timestamp).toDate();
 
-    List<String> timeParts = data['time'].toString().split(':');
-    TimeOfDay time = TimeOfDay(
-      hour: int.parse(timeParts[0]),
-      minute: int.parse(timeParts[1]),
+    DateTime endDate = data['endDate'] is DateTime
+        ? data['endDate']
+        : (data['endDate'] as Timestamp).toDate();
+
+    List<String> startTimeParts = data['startTime'].toString().split(':');
+    TimeOfDay startTime = TimeOfDay(
+      hour: int.parse(startTimeParts[0]),
+      minute: int.parse(startTimeParts[1]),
+    );
+
+    List<String> endTimeParts = data['endTime'].toString().split(':');
+    TimeOfDay endTime = TimeOfDay(
+      hour: int.parse(endTimeParts[0]),
+      minute: int.parse(endTimeParts[1]),
     );
 
     EventStatus status;
@@ -57,8 +71,10 @@ class Event {
     return Event(
       id: data['id'],
       title: data['title'] ?? '',
-      date: date,
-      time: time,
+      startDate: startDate,
+      startTime: startTime,
+      endDate: endDate,
+      endTime: endTime,
       location: data['location'] ?? '',
       description: data['description'] ?? '',
       category: data['category'] ?? '',
@@ -152,8 +168,10 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
       await FirebaseService.createEvent(
         title: event.title,
         description: event.description,
-        date: event.date,
-        time: '${event.time.hour}:${event.time.minute}',
+        startDate: event.startDate,
+        startTime: '${event.startTime.hour}:${event.startTime.minute}',
+        endDate: event.endDate,
+        endTime: '${event.endTime.hour}:${event.endTime.minute}',
         location: event.location,
         category: event.category,
         capacity: event.maxAttendees,
@@ -174,8 +192,10 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
         {
           'title': updatedEvent.title,
           'description': updatedEvent.description,
-          'date': updatedEvent.date,
-          'time': '${updatedEvent.time.hour}:${updatedEvent.time.minute}',
+          'startDate': updatedEvent.startDate,
+          'startTime': '${updatedEvent.startTime.hour}:${updatedEvent.startTime.minute}',
+          'endDate': updatedEvent.endDate,
+          'endTime': '${updatedEvent.endTime.hour}:${updatedEvent.endTime.minute}',
           'location': updatedEvent.location,
           'category': updatedEvent.category,
           'capacity': updatedEvent.maxAttendees,
@@ -608,9 +628,24 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
                 children: [
                   const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
                   const SizedBox(width: 8),
-                  Text(
-                    '${DateFormat('MMM dd, yyyy').format(event.date)} at ${event.time.format(context)}',
-                    style: const TextStyle(color: Colors.grey),
+                  Expanded(
+                    child: Text(
+                      'Start: ${DateFormat('MMM dd, yyyy').format(event.startDate)} at ${event.startTime.format(context)}',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.event, size: 16, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'End: ${DateFormat('MMM dd, yyyy').format(event.endDate)} at ${event.endTime.format(context)}',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
                   ),
                 ],
               ),
@@ -739,7 +774,7 @@ class _OrganizerDashboardState extends State<OrganizerDashboard> {
   }
 }
 
-// QR Scanner View - WITH CAMERA SCANNING
+// QR Scanner View
 class QRScannerView extends StatefulWidget {
   final Function(String) onScanned;
 
@@ -888,10 +923,8 @@ class _QRScannerViewState extends State<QRScannerView> {
           else
             _buildManualInputView(),
 
-          // Overlay with scanning frame
           if (!showManualInput) _buildScanningOverlay(),
 
-          // Manual input toggle button
           Positioned(
             bottom: 40,
             left: 0,
@@ -939,7 +972,6 @@ class _QRScannerViewState extends State<QRScannerView> {
                   ),
                   child: Stack(
                     children: [
-                      // Corner brackets
                       Positioned(
                         top: 0,
                         left: 0,
@@ -1304,8 +1336,10 @@ class _EventFormWidgetState extends State<EventFormWidget> {
   late TextEditingController _descriptionController;
   late TextEditingController _categoryController;
   late TextEditingController _maxAttendeesController;
-  late DateTime _selectedDate;
-  late TimeOfDay _selectedTime;
+  late DateTime _selectedStartDate;
+  late TimeOfDay _selectedStartTime;
+  late DateTime _selectedEndDate;
+  late TimeOfDay _selectedEndTime;
   late EventStatus _selectedStatus;
 
   @override
@@ -1317,8 +1351,10 @@ class _EventFormWidgetState extends State<EventFormWidget> {
     _categoryController = TextEditingController(text: widget.event?.category ?? '');
     _maxAttendeesController = TextEditingController(
         text: widget.event?.maxAttendees.toString() ?? '');
-    _selectedDate = widget.event?.date ?? DateTime.now();
-    _selectedTime = widget.event?.time ?? TimeOfDay.now();
+    _selectedStartDate = widget.event?.startDate ?? DateTime.now();
+    _selectedStartTime = widget.event?.startTime ?? TimeOfDay.now();
+    _selectedEndDate = widget.event?.endDate ?? DateTime.now().add(const Duration(hours: 2));
+    _selectedEndTime = widget.event?.endTime ?? TimeOfDay(hour: TimeOfDay.now().hour + 2, minute: TimeOfDay.now().minute);
     _selectedStatus = widget.event?.status ?? EventStatus.upcoming;
   }
 
@@ -1383,24 +1419,24 @@ class _EventFormWidgetState extends State<EventFormWidget> {
               onTap: () async {
                 final date = await showDatePicker(
                   context: context,
-                  initialDate: _selectedDate,
+                  initialDate: _selectedStartDate,
                   firstDate: DateTime(2020),
                   lastDate: DateTime(2030),
                 );
                 if (date != null) {
                   setState(() {
-                    _selectedDate = date;
+                    _selectedStartDate = date;
                   });
                 }
               },
               child: InputDecorator(
                 decoration: const InputDecoration(
-                  labelText: 'Date',
+                  labelText: 'Start Date',
                   border: OutlineInputBorder(),
                   suffixIcon: Icon(Icons.calendar_today),
                 ),
                 child: Text(
-                  DateFormat('MMM dd, yyyy').format(_selectedDate),
+                  DateFormat('MMM dd, yyyy').format(_selectedStartDate),
                   style: const TextStyle(fontSize: 16),
                 ),
               ),
@@ -1410,22 +1446,74 @@ class _EventFormWidgetState extends State<EventFormWidget> {
               onTap: () async {
                 final time = await showTimePicker(
                   context: context,
-                  initialTime: _selectedTime,
+                  initialTime: _selectedStartTime,
                 );
                 if (time != null) {
                   setState(() {
-                    _selectedTime = time;
+                    _selectedStartTime = time;
                   });
                 }
               },
               child: InputDecorator(
                 decoration: const InputDecoration(
-                  labelText: 'Time',
+                  labelText: 'Start Time',
                   border: OutlineInputBorder(),
                   suffixIcon: Icon(Icons.access_time),
                 ),
                 child: Text(
-                  _selectedTime.format(context),
+                  _selectedStartTime.format(context),
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () async {
+                final date = await showDatePicker(
+                  context: context,
+                  initialDate: _selectedEndDate,
+                  firstDate: _selectedStartDate,
+                  lastDate: DateTime(2030),
+                );
+                if (date != null) {
+                  setState(() {
+                    _selectedEndDate = date;
+                  });
+                }
+              },
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'End Date',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.calendar_today),
+                ),
+                child: Text(
+                  DateFormat('MMM dd, yyyy').format(_selectedEndDate),
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () async {
+                final time = await showTimePicker(
+                  context: context,
+                  initialTime: _selectedEndTime,
+                );
+                if (time != null) {
+                  setState(() {
+                    _selectedEndTime = time;
+                  });
+                }
+              },
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'End Time',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.access_time),
+                ),
+                child: Text(
+                  _selectedEndTime.format(context),
                   style: const TextStyle(fontSize: 16),
                 ),
               ),
@@ -1451,8 +1539,10 @@ class _EventFormWidgetState extends State<EventFormWidget> {
       final event = Event(
         id: widget.event?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
         title: _titleController.text,
-        date: _selectedDate,
-        time: _selectedTime,
+        startDate: _selectedStartDate,
+        startTime: _selectedStartTime,
+        endDate: _selectedEndDate,
+        endTime: _selectedEndTime,
         location: _locationController.text,
         description: _descriptionController.text,
         category: _categoryController.text,
@@ -1516,8 +1606,11 @@ class EventDetailsWidget extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           _buildDetailRow(Icons.calendar_today,
-              DateFormat('MMM dd, yyyy').format(event.date)),
-          _buildDetailRow(Icons.access_time, event.time.format(context)),
+              'Start: ${DateFormat('MMM dd, yyyy').format(event.startDate)}'),
+          _buildDetailRow(Icons.access_time, 'Start Time: ${event.startTime.format(context)}'),
+          _buildDetailRow(Icons.event,
+              'End: ${DateFormat('MMM dd, yyyy').format(event.endDate)}'),
+          _buildDetailRow(Icons.schedule, 'End Time: ${event.endTime.format(context)}'),
           _buildDetailRow(Icons.location_on, event.location),
           _buildDetailRow(Icons.category, event.category),
           _buildDetailRow(
