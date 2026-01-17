@@ -1,8 +1,103 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 
 class FirebaseService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static Timer? _statusUpdateTimer;
+
+  // ==================== AUTO STATUS UPDATE ====================
+
+  /// Initialize automatic status updates (call this in main.dart)
+  static void initializeAutoStatusUpdates() {
+    // Run immediately
+    _updateEventStatuses();
+
+    // Then run every minute
+    _statusUpdateTimer = Timer.periodic(
+      const Duration(minutes: 1),
+          (timer) => _updateEventStatuses(),
+    );
+  }
+
+  /// Stop the timer (call this when app is disposed)
+  static void disposeAutoStatusUpdates() {
+    _statusUpdateTimer?.cancel();
+    _statusUpdateTimer = null;
+  }
+
+  /// Update all event statuses based on current date/time
+  static Future<void> _updateEventStatuses() async {
+    try {
+      final now = DateTime.now();
+      final eventsSnapshot = await _firestore.collection('events').get();
+
+      final batch = _firestore.batch();
+      int updateCount = 0;
+
+      for (var doc in eventsSnapshot.docs) {
+        final data = doc.data();
+        final currentStatus = data['status'] as String?;
+
+        // Parse dates
+        DateTime startDate = data['startDate'] is DateTime
+            ? data['startDate']
+            : (data['startDate'] as Timestamp).toDate();
+
+        DateTime endDate = data['endDate'] is DateTime
+            ? data['endDate']
+            : (data['endDate'] as Timestamp).toDate();
+
+        // Parse times
+        final startTimeParts = (data['startTime'] as String).split(':');
+        final startDateTime = DateTime(
+          startDate.year,
+          startDate.month,
+          startDate.day,
+          int.parse(startTimeParts[0]),
+          int.parse(startTimeParts[1]),
+        );
+
+        final endTimeParts = (data['endTime'] as String).split(':');
+        final endDateTime = DateTime(
+          endDate.year,
+          endDate.month,
+          endDate.day,
+          int.parse(endTimeParts[0]),
+          int.parse(endTimeParts[1]),
+        );
+
+        String newStatus = currentStatus ?? 'upcoming';
+
+        // Determine new status
+        if (now.isAfter(endDateTime)) {
+          newStatus = 'completed';
+        } else if (now.isAfter(startDateTime) && now.isBefore(endDateTime)) {
+          newStatus = 'ongoing';
+        } else {
+          newStatus = 'upcoming';
+        }
+
+        // Update only if status changed
+        if (newStatus != currentStatus) {
+          batch.update(doc.reference, {'status': newStatus});
+          updateCount++;
+        }
+      }
+
+      if (updateCount > 0) {
+        await batch.commit();
+        print('Updated $updateCount event statuses');
+      }
+    } catch (e) {
+      print('Error updating event statuses: $e');
+    }
+  }
+
+  /// Manually trigger status update (useful for testing)
+  static Future<void> updateEventStatusesManually() async {
+    await _updateEventStatuses();
+  }
 
   // ==================== AUTHENTICATION ====================
 
@@ -66,7 +161,6 @@ class FirebaseService {
   // ==================== EVENTS CRUD (REAL-TIME) ====================
 
   /// Create new event (Organizer only) - Returns eventId
-  /// NOW INCLUDES startDate, startTime, endDate, endTime
   static Future<String> createEvent({
     required String title,
     required String description,
@@ -79,6 +173,33 @@ class FirebaseService {
     required int capacity,
   }) async {
     try {
+      // Determine initial status based on dates
+      final now = DateTime.now();
+      final startTimeParts = startTime.split(':');
+      final startDateTime = DateTime(
+        startDate.year,
+        startDate.month,
+        startDate.day,
+        int.parse(startTimeParts[0]),
+        int.parse(startTimeParts[1]),
+      );
+
+      final endTimeParts = endTime.split(':');
+      final endDateTime = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+        int.parse(endTimeParts[0]),
+        int.parse(endTimeParts[1]),
+      );
+
+      String initialStatus = 'upcoming';
+      if (now.isAfter(endDateTime)) {
+        initialStatus = 'completed';
+      } else if (now.isAfter(startDateTime)) {
+        initialStatus = 'ongoing';
+      }
+
       final docRef = await _firestore.collection('events').add({
         'title': title,
         'description': description,
@@ -90,7 +211,7 @@ class FirebaseService {
         'category': category,
         'capacity': capacity,
         'registeredCount': 0,
-        'status': 'upcoming', // upcoming, ongoing, completed
+        'status': initialStatus,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -115,6 +236,9 @@ class FirebaseService {
       }
 
       await _firestore.collection('events').doc(eventId).update(updates);
+
+      // Trigger immediate status check
+      await _updateEventStatuses();
     } catch (e) {
       throw 'Failed to update event: ${e.toString()}';
     }
@@ -169,11 +293,11 @@ class FirebaseService {
     });
   }
 
-  /// Get active events for attendees (real-time)
+  /// Get active events for attendees (real-time) - NOW ONLY UPCOMING
   static Stream<List<Map<String, dynamic>>> getActiveEventsStream() {
     return _firestore
         .collection('events')
-        .where('status', whereIn: ['upcoming', 'ongoing'])
+        .where('status', isEqualTo: 'upcoming') // Only upcoming events can be registered
         .orderBy('startDate', descending: false)
         .snapshots()
         .map((snapshot) {
@@ -211,13 +335,19 @@ class FirebaseService {
           throw 'Already registered for this event';
         }
 
-        // Check capacity
+        // Check capacity and status
         final eventDoc = await transaction.get(eventRef);
         if (!eventDoc.exists) {
           throw 'Event not found';
         }
 
         final eventData = eventDoc.data()!;
+
+        // NEW: Check if event is still upcoming
+        if (eventData['status'] != 'upcoming') {
+          throw 'Registration closed - Event has already started or completed';
+        }
+
         final currentCount = eventData['registeredCount'] as int? ?? 0;
         final capacity = eventData['capacity'] as int;
 
@@ -255,6 +385,15 @@ class FirebaseService {
         final regDoc = await transaction.get(regRef);
         if (!regDoc.exists) {
           throw 'Not registered for this event';
+        }
+
+        // NEW: Check if event is still upcoming
+        final eventDoc = await transaction.get(eventRef);
+        if (eventDoc.exists) {
+          final eventData = eventDoc.data()!;
+          if (eventData['status'] != 'upcoming') {
+            throw 'Cannot unregister - Event has already started or completed';
+          }
         }
 
         // Remove registration
