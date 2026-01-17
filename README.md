@@ -21,8 +21,11 @@ Arun Kumar
 Name:	               	                   
 👥 Priyanshi Srivastava  
 
-Role:
-👨‍💻 Developer	       
+Role 👨‍💻:
+Developer	      
+
+🔗 LinkedIn:
+https://www.linkedin.com/in/priyanshi-srivastava8119/
 
 Email 📧:
 srivastavapriyanshi8081@gmail.com
