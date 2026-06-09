@@ -97,3 +97,5 @@ SCRIET Events removes paper forms, WhatsApp confusion and fake entries by provid
 📄 License
 
 This project is developed for educational and hackathon purposes.
+
+
